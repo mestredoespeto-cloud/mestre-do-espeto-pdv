@@ -1,0 +1,15 @@
+{
+  "name": "mestre-do-espeto",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^3.8.1"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
