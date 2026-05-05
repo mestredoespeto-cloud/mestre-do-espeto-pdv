@@ -1,4 +1,15 @@
 import React, { useEffect, useState } from 'react'
+import { db } from './firebase'
+import {
+  collection,
+  doc,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
+  serverTimestamp
+} from 'firebase/firestore'
 
 const cardapio = {
   Espetos: [
@@ -14,18 +25,15 @@ const cardapio = {
     { nome: 'Queijo Coalho', preco: 10 },
     { nome: 'Tulipa', preco: 10 }
   ],
-
   'Espetos Premium Avulso': [
     { nome: 'Medalhão de Frango', preco: 12 },
     { nome: 'Linguiça Cuiabana', preco: 12 },
     { nome: 'Misto Especial', preco: 12 }
   ],
-
   Executivos: [
     { nome: 'Executivo Mestre Clássico 1', preco: 29.99, qtdEspetos: 2 },
     { nome: 'Executivo Mestre Clássico 2', preco: 39.99, qtdEspetos: 3 }
   ],
-
   Adicionais: [
     { nome: 'Porção de Arroz 500g', preco: 10 },
     { nome: 'Porção de Vinagrete 350g', preco: 8 },
@@ -33,7 +41,6 @@ const cardapio = {
     { nome: 'Linguiça Cuiabana no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Linguiça Cuiabana' },
     { nome: 'Misto Especial no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Misto Especial' }
   ],
-
   Bebidas: [
     { nome: 'Água sem Gás', preco: 3 },
     { nome: 'Água com Gás', preco: 3 },
@@ -58,8 +65,7 @@ const cardapio = {
 
 const estoqueInicial = {}
 Object.values(cardapio).flat().forEach(item => {
-  const nomeEstoque = item.estoqueNome || item.nome
-  estoqueInicial[nomeEstoque] = 50
+  estoqueInicial[item.estoqueNome || item.nome] = 50
 })
 
 const hoje = () => new Date().toISOString().slice(0, 10)
@@ -70,7 +76,7 @@ export default function App() {
   const [historico, setHistorico] = useState([])
   const [comandaAtual, setComandaAtual] = useState(null)
   const [cliente, setCliente] = useState('')
-  const [atendente, setAtendente] = useState('')
+  const [atendente, setAtendente] = useState(localStorage.getItem('atendente_mestre') || '')
   const [pagamento, setPagamento] = useState('dinheiro')
   const [estoque, setEstoque] = useState(estoqueInicial)
   const [busca, setBusca] = useState('')
@@ -79,57 +85,77 @@ export default function App() {
   const [espetosExecutivo, setEspetosExecutivo] = useState([])
 
   useEffect(() => {
-    setTimeout(() => setLoading(false), 1200)
+    setTimeout(() => setLoading(false), 1000)
   }, [])
 
   useEffect(() => {
-    const salvo = localStorage.getItem('pdv_mestre_do_espeto')
-    if (salvo) {
-      const dados = JSON.parse(salvo)
-      setComandas(dados.comandas || [])
-      setHistorico(dados.historico || [])
-      setEstoque({ ...estoqueInicial, ...(dados.estoque || {}) })
-      setAtendente(dados.atendente || '')
+    localStorage.setItem('atendente_mestre', atendente)
+  }, [atendente])
+
+  useEffect(() => {
+    const unsubComandas = onSnapshot(collection(db, 'comandas'), snapshot => {
+      const lista = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+      setComandas(lista)
+
+      if (comandaAtual) {
+        const atual = lista.find(c => c.id === comandaAtual.id)
+        if (atual) setComandaAtual(atual)
+      }
+    })
+
+    const unsubHistorico = onSnapshot(collection(db, 'historico'), snapshot => {
+      setHistorico(snapshot.docs.map(d => ({ id: d.id, ...d.data() })))
+    })
+
+    const unsubEstoque = onSnapshot(doc(db, 'controle', 'estoque'), async snap => {
+      if (snap.exists()) {
+        setEstoque({ ...estoqueInicial, ...snap.data() })
+      } else {
+        await setDoc(doc(db, 'controle', 'estoque'), estoqueInicial)
+      }
+    })
+
+    return () => {
+      unsubComandas()
+      unsubHistorico()
+      unsubEstoque()
     }
-  }, [])
-
-  useEffect(() => {
-    localStorage.setItem('pdv_mestre_do_espeto', JSON.stringify({
-      comandas,
-      historico,
-      estoque,
-      atendente
-    }))
-  }, [comandas, historico, estoque, atendente])
+  }, [comandaAtual?.id])
 
   const tocarSom = (arquivo) => {
     try { new Audio(arquivo).play() } catch (e) {}
   }
 
-  const atualizarComanda = (nova) => {
-    setComandaAtual(nova)
-    setComandas(comandas.map(c => c.id === nova.id ? nova : c))
+  const salvarEstoque = async (novoEstoque) => {
+    await setDoc(doc(db, 'controle', 'estoque'), novoEstoque)
   }
 
-  const criarComanda = () => {
+  const criarComanda = async () => {
     if (!atendente.trim()) return alert('Digite o nome do atendente.')
     if (!cliente.trim()) return alert('Digite nome, mesa ou referência.')
 
     const nova = {
-      id: Date.now(),
       cliente,
       atendente,
       itens: [],
-      abertaEm: new Date().toISOString()
+      abertaEm: new Date().toISOString(),
+      criadoEm: serverTimestamp()
     }
 
     tocarSom('/nova-comanda.mp3')
-    setComandas([...comandas, nova])
-    setComandaAtual(nova)
+    const ref = await addDoc(collection(db, 'comandas'), nova)
+    setComandaAtual({ id: ref.id, ...nova })
     setCliente('')
   }
 
-  const adicionarItem = (item, categoria) => {
+  const atualizarComanda = async (nova) => {
+    setComandaAtual(nova)
+    await updateDoc(doc(db, 'comandas', nova.id), {
+      itens: nova.itens
+    })
+  }
+
+  const adicionarItem = async (item, categoria) => {
     if (!comandaAtual) return alert('Selecione ou crie uma comanda.')
 
     const nomeEstoque = item.estoqueNome || item.nome
@@ -144,8 +170,6 @@ export default function App() {
       [nomeEstoque]: (estoque[nomeEstoque] || 0) - 1
     }
 
-    if (novoEstoque[nomeEstoque] <= 5) tocarSom('/alerta.mp3')
-
     const itemVenda = {
       nome: item.nome,
       preco: item.preco,
@@ -154,12 +178,13 @@ export default function App() {
       estoqueNome: nomeEstoque
     }
 
-    atualizarComanda({
+    await salvarEstoque(novoEstoque)
+    await atualizarComanda({
       ...comandaAtual,
-      itens: [...comandaAtual.itens, itemVenda]
+      itens: [...(comandaAtual.itens || []), itemVenda]
     })
 
-    setEstoque(novoEstoque)
+    if (novoEstoque[nomeEstoque] <= 5) tocarSom('/alerta.mp3')
   }
 
   const abrirSelecaoExecutivo = (item) => {
@@ -188,7 +213,7 @@ export default function App() {
     setEspetosExecutivo([...espetosExecutivo, espeto.nome])
   }
 
-  const confirmarExecutivo = () => {
+  const confirmarExecutivo = async () => {
     if (!executivoSelecionado) return
 
     if (espetosExecutivo.length !== executivoSelecionado.qtdEspetos) {
@@ -213,17 +238,17 @@ export default function App() {
       espetosInclusos: [...espetosExecutivo]
     }
 
-    atualizarComanda({
+    await salvarEstoque(novoEstoque)
+    await atualizarComanda({
       ...comandaAtual,
-      itens: [...comandaAtual.itens, itemVenda]
+      itens: [...(comandaAtual.itens || []), itemVenda]
     })
 
-    setEstoque(novoEstoque)
     setExecutivoSelecionado(null)
     setEspetosExecutivo([])
   }
 
-  const removerItem = (index) => {
+  const removerItem = async (index) => {
     const item = comandaAtual.itens[index]
     const novosItens = [...comandaAtual.itens]
     novosItens.splice(index, 1)
@@ -239,12 +264,12 @@ export default function App() {
       novoEstoque[nomeEstoque] = (novoEstoque[nomeEstoque] || 0) + 1
     }
 
-    setEstoque(novoEstoque)
-    atualizarComanda({ ...comandaAtual, itens: novosItens })
+    await salvarEstoque(novoEstoque)
+    await atualizarComanda({ ...comandaAtual, itens: novosItens })
   }
 
   const total = comandaAtual
-    ? comandaAtual.itens.reduce((acc, i) => acc + i.preco, 0)
+    ? (comandaAtual.itens || []).reduce((acc, i) => acc + i.preco, 0)
     : 0
 
   const imprimirTexto = (texto) => {
@@ -272,7 +297,7 @@ MESTRE DO ESPETO
 Cliente/Mesa: ${comandaAtual.cliente}
 Atendente: ${comandaAtual.atendente}
 ------------------------
-${comandaAtual.itens.map(i => {
+${(comandaAtual.itens || []).map(i => {
   if (i.tipo === 'executivo') {
     return `${i.nome}\n  Espetos: ${i.espetosInclusos.join(', ')}`
   }
@@ -292,7 +317,7 @@ MESTRE DO ESPETO
 Cliente/Mesa: ${comandaAtual.cliente}
 Atendente: ${comandaAtual.atendente}
 ------------------------
-${comandaAtual.itens.map(descricaoItem).join('\n')}
+${(comandaAtual.itens || []).map(descricaoItem).join('\n')}
 ------------------------
 TOTAL: R$ ${total.toFixed(2)}
 Pagamento: ${pagamento.toUpperCase()}
@@ -302,24 +327,22 @@ Obrigado e volte sempre!
     imprimirTexto(texto)
   }
 
-  const fecharComanda = () => {
+  const fecharComanda = async () => {
     if (!comandaAtual) return
-    if (comandaAtual.itens.length === 0) return alert('Comanda sem itens.')
+    if (!comandaAtual.itens || comandaAtual.itens.length === 0) return alert('Comanda sem itens.')
 
     const dataFechamento = new Date().toISOString().slice(0, 10)
 
-    setHistorico([
-      ...historico,
-      {
-        ...comandaAtual,
-        pagamento,
-        total,
-        dataFechamento,
-        fechadoEm: new Date().toISOString()
-      }
-    ])
+    await addDoc(collection(db, 'historico'), {
+      ...comandaAtual,
+      pagamento,
+      total,
+      dataFechamento,
+      fechadoEm: new Date().toISOString(),
+      criadoEm: serverTimestamp()
+    })
 
-    setComandas(comandas.filter(c => c.id !== comandaAtual.id))
+    await deleteDoc(doc(db, 'comandas', comandaAtual.id))
     setComandaAtual(null)
   }
 
@@ -336,7 +359,7 @@ Obrigado e volte sempre!
       totalVendas += c.total || 0
       caixaData[c.pagamento] = (caixaData[c.pagamento] || 0) + (c.total || 0)
 
-      c.itens.forEach(item => {
+      ;(c.itens || []).forEach(item => {
         totalItens++
 
         produtos[item.nome] = produtos[item.nome] || { qtd: 0, total: 0 }
@@ -406,42 +429,32 @@ Cartão: R$ ${rel.caixaData.cartao.toFixed(2)}
 Valor esperado: R$ ${rel.totalVendas.toFixed(2)}
 Valor registrado: R$ ${totalCaixaData.toFixed(2)}
 Diferença: R$ ${(totalCaixaData - rel.totalVendas).toFixed(2)}
-
-Produto que mais saiu:
-${rel.maisSaiu ? `${rel.maisSaiu[0]} - ${rel.maisSaiu[1].qtd} un.` : 'Sem vendas'}
-
-Produto que menos saiu:
-${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem vendas'}
 `
     imprimirTexto(texto)
   }
 
-  const exportarBackup = () => {
-    const dados = localStorage.getItem('pdv_mestre_do_espeto')
-    if (!dados) return alert('Nenhum dado encontrado.')
-
-    const blob = new Blob([dados], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `backup-mestre-do-espeto-${hoje()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const limparDiaSelecionado = () => {
+  const limparDiaSelecionado = async () => {
     if (!confirm(`Deseja limpar o histórico do dia ${dataRelatorio}?`)) return
-    setHistorico(historico.filter(c => c.dataFechamento !== dataRelatorio))
+    const docsDoDia = historico.filter(c => c.dataFechamento === dataRelatorio)
+    for (const h of docsDoDia) {
+      await deleteDoc(doc(db, 'historico', h.id))
+    }
   }
 
-  const reporEstoque = (produto) => {
+  const reporEstoque = async (produto) => {
     const qtd = Number(prompt(`Quantidade para repor ${produto}:`))
     if (!qtd || qtd <= 0) return
-    setEstoque({ ...estoque, [produto]: (estoque[produto] || 0) + qtd })
+    await salvarEstoque({ ...estoque, [produto]: (estoque[produto] || 0) + qtd })
+  }
+
+  const definirEstoque = async (produto) => {
+    const qtd = Number(prompt(`Digite o estoque EXATO de ${produto}:`))
+    if (qtd < 0 || Number.isNaN(qtd)) return
+    await salvarEstoque({ ...estoque, [produto]: qtd })
   }
 
   const comandasFiltradas = comandas.filter(c =>
-    c.cliente.toLowerCase().includes(busca.toLowerCase())
+    (c.cliente || '').toLowerCase().includes(busca.toLowerCase())
   )
 
   const opcoesEspetos = cardapio.Espetos
@@ -460,7 +473,8 @@ ${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem ven
     <div style={styles.app}>
       <div style={styles.logoBox}>
         <img src="/logo.png" alt="Mestre do Espeto" style={styles.logo} />
-        <h1 style={styles.title}>MESTRE DO ESPETO — PDV</h1>
+        <h1 style={styles.title}>MESTRE DO ESPETO — PDV ONLINE</h1>
+        <p style={{ color: '#00c853' }}>🟢 Sincronizado em tempo real</p>
       </div>
 
       <div style={styles.card}>
@@ -475,11 +489,11 @@ ${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem ven
       </div>
 
       <div style={styles.card}>
-        <h2>Comandas Abertas</h2>
+        <h2>Comandas Abertas em Tempo Real</h2>
         <input placeholder="Buscar comanda..." value={busca} onChange={e => setBusca(e.target.value)} style={styles.input} />
         {comandasFiltradas.map(c => (
           <button key={c.id} onClick={() => setComandaAtual(c)} style={styles.smallBtn}>
-            {c.cliente} — {c.itens.length} itens
+            {c.cliente} — {(c.itens || []).length} itens
           </button>
         ))}
       </div>
@@ -512,7 +526,6 @@ ${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem ven
           {Object.keys(cardapio).map(cat => (
             <div key={cat}>
               <h3>{cat}</h3>
-
               <div style={styles.grid}>
                 {cardapio[cat].map(item => (
                   <button
@@ -530,7 +543,7 @@ ${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem ven
           ))}
 
           <h2>Itens</h2>
-          {comandaAtual.itens.map((item, index) => (
+          {(comandaAtual.itens || []).map((item, index) => (
             <div key={index} style={styles.itemLinha}>
               <span>
                 {item.nome} — R$ {item.preco.toFixed(2)}
@@ -555,11 +568,6 @@ ${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem ven
       )}
 
       <div style={styles.card}>
-        <h2>Backup</h2>
-        <button onClick={exportarBackup} style={styles.green}>💾 Baixar Backup</button>
-      </div>
-
-      <div style={styles.card}>
         <h2>Relatório por Data</h2>
         <input type="date" value={dataRelatorio} onChange={e => setDataRelatorio(e.target.value)} style={styles.input} />
         <button onClick={imprimirRelatorioData} style={styles.green}>🧾 Imprimir Relatório da Data</button>
@@ -577,24 +585,13 @@ ${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem ven
       </div>
 
       <div style={styles.card}>
-        <h2>Resumo por Categoria</h2>
-        {Object.keys(rel.categorias).map(cat => (
-          <div key={cat} style={styles.box}>
-            <h3>{cat} - R$ {rel.categorias[cat].total.toFixed(2)}</h3>
-            {Object.keys(rel.categorias[cat].produtos).map(p => (
-              <p key={p}>{p}: {rel.categorias[cat].produtos[p].qtd} un. | R$ {rel.categorias[cat].produtos[p].total.toFixed(2)}</p>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      <div style={styles.card}>
-        <h2>Estoque</h2>
+        <h2>Estoque em Tempo Real</h2>
         {Object.keys(estoque).map(prod => (
           <p key={prod}>
             {prod}: {estoque[prod]} un.
             {estoque[prod] <= 5 && <b style={{ color: 'red' }}> ⚠️ baixo</b>}
             <button onClick={() => reporEstoque(prod)} style={styles.repor}>Repor</button>
+            <button onClick={() => definirEstoque(prod)} style={styles.repor}>Definir</button>
           </p>
         ))}
       </div>
