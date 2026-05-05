@@ -433,14 +433,32 @@ Diferença: R$ ${(totalCaixaData - rel.totalVendas).toFixed(2)}
     imprimirTexto(texto)
   }
 
-  const limparDiaSelecionado = async () => {
-    if (!confirm(`Deseja limpar o histórico do dia ${dataRelatorio}?`)) return
-    const docsDoDia = historico.filter(c => c.dataFechamento === dataRelatorio)
-    for (const h of docsDoDia) {
-      await deleteDoc(doc(db, 'historico', h.id))
-    }
+const limparDiaSelecionado = async () => {
+  const confirmar = confirm(`Deseja apagar o histórico do dia ${dataRelatorio}?`)
+
+  if (!confirmar) return
+
+  const docsDoDia = historico.filter(c => c.dataFechamento === dataRelatorio)
+
+  if (docsDoDia.length === 0) {
+    alert('Nenhuma venda encontrada para essa data.')
+    return
   }
 
+  try {
+    await Promise.all(
+      docsDoDia.map(c =>
+        deleteDoc(doc(db, 'historico', c.id))
+      )
+    )
+
+    alert('Histórico da data apagado com sucesso.')
+  } catch (error) {
+    console.error(error)
+    alert('Erro ao apagar histórico. Verifique as regras do Firebase.')
+  }
+}
+ 
   const reporEstoque = async (produto) => {
     const qtd = Number(prompt(`Quantidade para repor ${produto}:`))
     if (!qtd || qtd <= 0) return
