@@ -3,17 +3,37 @@ import React, { useEffect, useState } from 'react'
 const cardapio = {
   Espetos: [
     { nome: 'Carne Bovina', preco: 10 },
+    { nome: 'Costela', preco: 10 },
+    { nome: 'Coração de Frango', preco: 10 },
     { nome: 'Frango', preco: 10 },
-    { nome: 'Linguiça Pernil', preco: 10 },
     { nome: 'Kafta', preco: 10 },
+    { nome: 'Linguiça Pernil', preco: 10 },
+    { nome: 'Lombo', preco: 10 },
+    { nome: 'Panceta', preco: 10 },
     { nome: 'Pão de Alho', preco: 10 },
-    { nome: 'Queijo Coalho', preco: 10 }
+    { nome: 'Queijo Coalho', preco: 10 },
+    { nome: 'Tulipa', preco: 10 }
   ],
-  Premium: [
+
+  'Espetos Premium Avulso': [
     { nome: 'Medalhão de Frango', preco: 12 },
     { nome: 'Linguiça Cuiabana', preco: 12 },
     { nome: 'Misto Especial', preco: 12 }
   ],
+
+  Executivos: [
+    { nome: 'Executivo Mestre Clássico 1', preco: 29.99, qtdEspetos: 2 },
+    { nome: 'Executivo Mestre Clássico 2', preco: 39.99, qtdEspetos: 3 }
+  ],
+
+  Adicionais: [
+    { nome: 'Porção de Arroz 500g', preco: 10 },
+    { nome: 'Porção de Vinagrete 350g', preco: 8 },
+    { nome: 'Medalhão de Frango no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Medalhão de Frango' },
+    { nome: 'Linguiça Cuiabana no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Linguiça Cuiabana' },
+    { nome: 'Misto Especial no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Misto Especial' }
+  ],
+
   Bebidas: [
     { nome: 'Água sem Gás', preco: 3 },
     { nome: 'Água com Gás', preco: 3 },
@@ -23,30 +43,23 @@ const cardapio = {
     { nome: 'Fanta Uva Lata', preco: 6 },
     { nome: 'Suco Del Valle Laranja 450ml', preco: 6 },
     { nome: 'Suco Del Valle Uva 450ml', preco: 6 },
-    { nome: 'Suco Kapo Morango', preco: 5 },
-    { nome: 'Suco Kapo Maracujá', preco: 5 },
     { nome: 'Suco Kapo Laranja', preco: 5 },
+    { nome: 'Suco Kapo Maracujá', preco: 5 },
+    { nome: 'Suco Kapo Morango', preco: 5 },
     { nome: 'Suco Kapo Uva', preco: 5 },
-    { nome: 'Brahma Lata', preco: 5 },
-    { nome: 'Skol Lata', preco: 5 },
-    { nome: 'Original Lata', preco: 8 },
-    { nome: 'Heineken Long Neck', preco: 12 },
-    { nome: 'Energético Monster', preco: 12 }
-  ],
-  Executivos: [
-    { nome: 'Executivo Clássico 1', preco: 29.99, qtdEspetos: 2 },
-    { nome: 'Executivo Clássico 2', preco: 39.99, qtdEspetos: 3 }
-  ],
-  Adicionais: [
-    { nome: 'Porção de Arroz', preco: 10 },
-    { nome: 'Vinagrete', preco: 8 },
-    { nome: 'Molho Especial', preco: 3 }
+    { nome: 'Brahma Lata 350ml', preco: 5 },
+    { nome: 'Skol Lata 350ml', preco: 5 },
+    { nome: 'Original Lata 350ml', preco: 8 },
+    { nome: 'Heineken Long Neck 330ml', preco: 12 },
+    { nome: 'Heineken Long Neck Zero 330ml', preco: 12 },
+    { nome: 'Energético Monster 473ml', preco: 12 }
   ]
 }
 
 const estoqueInicial = {}
 Object.values(cardapio).flat().forEach(item => {
-  estoqueInicial[item.nome] = 50
+  const nomeEstoque = item.estoqueNome || item.nome
+  estoqueInicial[nomeEstoque] = 50
 })
 
 const hoje = () => new Date().toISOString().slice(0, 10)
@@ -60,14 +73,13 @@ export default function App() {
   const [atendente, setAtendente] = useState('')
   const [pagamento, setPagamento] = useState('dinheiro')
   const [estoque, setEstoque] = useState(estoqueInicial)
-  const [caixa, setCaixa] = useState({ dinheiro: 0, pix: 0, cartao: 0 })
   const [busca, setBusca] = useState('')
   const [dataRelatorio, setDataRelatorio] = useState(hoje())
   const [executivoSelecionado, setExecutivoSelecionado] = useState(null)
   const [espetosExecutivo, setEspetosExecutivo] = useState([])
 
   useEffect(() => {
-    setTimeout(() => setLoading(false), 1500)
+    setTimeout(() => setLoading(false), 1200)
   }, [])
 
   useEffect(() => {
@@ -77,7 +89,6 @@ export default function App() {
       setComandas(dados.comandas || [])
       setHistorico(dados.historico || [])
       setEstoque({ ...estoqueInicial, ...(dados.estoque || {}) })
-      setCaixa(dados.caixa || { dinheiro: 0, pix: 0, cartao: 0 })
       setAtendente(dados.atendente || '')
     }
   }, [])
@@ -87,10 +98,9 @@ export default function App() {
       comandas,
       historico,
       estoque,
-      caixa,
       atendente
     }))
-  }, [comandas, historico, estoque, caixa, atendente])
+  }, [comandas, historico, estoque, atendente])
 
   const tocarSom = (arquivo) => {
     try { new Audio(arquivo).play() } catch (e) {}
@@ -122,25 +132,34 @@ export default function App() {
   const adicionarItem = (item, categoria) => {
     if (!comandaAtual) return alert('Selecione ou crie uma comanda.')
 
-    if ((estoque[item.nome] || 0) <= 0) {
+    const nomeEstoque = item.estoqueNome || item.nome
+
+    if ((estoque[nomeEstoque] || 0) <= 0) {
       tocarSom('/alerta.mp3')
-      return alert(`${item.nome} está sem estoque.`)
+      return alert(`${nomeEstoque} está sem estoque.`)
     }
 
     const novoEstoque = {
       ...estoque,
-      [item.nome]: (estoque[item.nome] || 0) - 1
+      [nomeEstoque]: (estoque[nomeEstoque] || 0) - 1
     }
 
-    if (novoEstoque[item.nome] <= 5) tocarSom('/alerta.mp3')
+    if (novoEstoque[nomeEstoque] <= 5) tocarSom('/alerta.mp3')
 
-    const novaComanda = {
+    const itemVenda = {
+      nome: item.nome,
+      preco: item.preco,
+      categoria,
+      tipo: item.premiumExecutivo ? 'premium-executivo' : 'normal',
+      estoqueNome: nomeEstoque
+    }
+
+    atualizarComanda({
       ...comandaAtual,
-      itens: [...comandaAtual.itens, { ...item, categoria, tipo: 'normal' }]
-    }
+      itens: [...comandaAtual.itens, itemVenda]
+    })
 
     setEstoque(novoEstoque)
-    atualizarComanda(novaComanda)
   }
 
   const abrirSelecaoExecutivo = (item) => {
@@ -194,13 +213,12 @@ export default function App() {
       espetosInclusos: [...espetosExecutivo]
     }
 
-    const novaComanda = {
+    atualizarComanda({
       ...comandaAtual,
       itens: [...comandaAtual.itens, itemVenda]
-    }
+    })
 
     setEstoque(novoEstoque)
-    atualizarComanda(novaComanda)
     setExecutivoSelecionado(null)
     setEspetosExecutivo([])
   }
@@ -217,7 +235,8 @@ export default function App() {
         novoEstoque[e] = (novoEstoque[e] || 0) + 1
       })
     } else {
-      novoEstoque[item.nome] = (novoEstoque[item.nome] || 0) + 1
+      const nomeEstoque = item.estoqueNome || item.nome
+      novoEstoque[nomeEstoque] = (novoEstoque[nomeEstoque] || 0) + 1
     }
 
     setEstoque(novoEstoque)
@@ -299,11 +318,6 @@ Obrigado e volte sempre!
         fechadoEm: new Date().toISOString()
       }
     ])
-
-    setCaixa({
-      ...caixa,
-      [pagamento]: caixa[pagamento] + total
-    })
 
     setComandas(comandas.filter(c => c.id !== comandaAtual.id))
     setComandaAtual(null)
@@ -393,7 +407,6 @@ Valor esperado: R$ ${rel.totalVendas.toFixed(2)}
 Valor registrado: R$ ${totalCaixaData.toFixed(2)}
 Diferença: R$ ${(totalCaixaData - rel.totalVendas).toFixed(2)}
 
-------------------------
 Produto que mais saiu:
 ${rel.maisSaiu ? `${rel.maisSaiu[0]} - ${rel.maisSaiu[1].qtd} un.` : 'Sem vendas'}
 
@@ -403,32 +416,23 @@ ${rel.menosSaiu ? `${rel.menosSaiu[0]} - ${rel.menosSaiu[1].qtd} un.` : 'Sem ven
     imprimirTexto(texto)
   }
 
+  const exportarBackup = () => {
+    const dados = localStorage.getItem('pdv_mestre_do_espeto')
+    if (!dados) return alert('Nenhum dado encontrado.')
+
+    const blob = new Blob([dados], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `backup-mestre-do-espeto-${hoje()}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const limparDiaSelecionado = () => {
     if (!confirm(`Deseja limpar o histórico do dia ${dataRelatorio}?`)) return
     setHistorico(historico.filter(c => c.dataFechamento !== dataRelatorio))
   }
-const exportarBackup = () => {
-  const dados = localStorage.getItem('pdv_mestre_do_espeto')
-
-  if (!dados) {
-    alert('Nenhum dado encontrado.')
-    return
-  }
-
-  const blob = new Blob([dados], {
-    type: 'application/json'
-  })
-
-  const url = window.URL.createObjectURL(blob)
-
-  const a = document.createElement('a')
-
-  a.href = url
-  a.download = 'backup-mestre-do-espeto.json'
-  a.click()
-
-  window.URL.revokeObjectURL(url)
-}
 
   const reporEstoque = (produto) => {
     const qtd = Number(prompt(`Quantidade para repor ${produto}:`))
@@ -440,7 +444,7 @@ const exportarBackup = () => {
     c.cliente.toLowerCase().includes(busca.toLowerCase())
   )
 
-  const opcoesEspetos = [...cardapio.Espetos, ...cardapio.Premium]
+  const opcoesEspetos = cardapio.Espetos
 
   if (loading) {
     return (
@@ -483,7 +487,7 @@ const exportarBackup = () => {
       {executivoSelecionado && (
         <div style={styles.cardDestaque}>
           <h2>{executivoSelecionado.nome}</h2>
-          <p>Selecione {executivoSelecionado.qtdEspetos} espetos inclusos.</p>
+          <p>Selecione {executivoSelecionado.qtdEspetos} espetos tradicionais inclusos.</p>
           <p>Selecionados: {espetosExecutivo.join(', ') || 'nenhum'}</p>
 
           {opcoesEspetos.map(e => (
@@ -508,15 +512,20 @@ const exportarBackup = () => {
           {Object.keys(cardapio).map(cat => (
             <div key={cat}>
               <h3>{cat}</h3>
-              {cardapio[cat].map(item => (
-                <button
-                  key={item.nome}
-                  onClick={() => cat === 'Executivos' ? abrirSelecaoExecutivo(item) : adicionarItem(item, cat)}
-                  style={styles.itemBtn}
-                >
-                  {item.nome} — R$ {item.preco.toFixed(2)}
-                </button>
-              ))}
+
+              <div style={styles.grid}>
+                {cardapio[cat].map(item => (
+                  <button
+                    key={item.nome}
+                    onClick={() => cat === 'Executivos' ? abrirSelecaoExecutivo(item) : adicionarItem(item, cat)}
+                    style={cat === 'Executivos' ? styles.execBtn : styles.itemBtn}
+                  >
+                    <strong>{item.nome}</strong>
+                    <br />
+                    R$ {item.preco.toFixed(2)}
+                  </button>
+                ))}
+              </div>
             </div>
           ))}
 
@@ -544,16 +553,11 @@ const exportarBackup = () => {
           <button onClick={fecharComanda} style={styles.red}>💰 Fechar Comanda</button>
         </div>
       )}
-<div style={styles.card}>
-  <h2>Backup do Sistema</h2>
 
-  <button
-    onClick={exportarBackup}
-    style={styles.green}
-  >
-    💾 Baixar Backup
-  </button>
-</div>
+      <div style={styles.card}>
+        <h2>Backup</h2>
+        <button onClick={exportarBackup} style={styles.green}>💾 Baixar Backup</button>
+      </div>
 
       <div style={styles.card}>
         <h2>Relatório por Data</h2>
@@ -609,11 +613,13 @@ const styles = {
   cardDestaque: { background: '#331111', padding: 15, borderRadius: 12, marginBottom: 15, border: '2px solid #ff3333' },
   box: { background: '#111', padding: 10, borderRadius: 8, marginBottom: 10 },
   input: { width: '100%', padding: 12, marginBottom: 10, borderRadius: 8, border: 'none' },
-  green: { width: '100%', padding: 12, background: '#00c853', color: '#fff', border: 'none', borderRadius: 8, marginTop: 5 },
-  red: { width: '100%', padding: 12, background: '#d50000', color: '#fff', border: 'none', borderRadius: 8, marginTop: 5 },
-  yellow: { width: '100%', padding: 12, background: '#ffb300', color: '#111', border: 'none', borderRadius: 8, marginTop: 5 },
-  itemBtn: { width: '100%', padding: 12, background: '#333', color: '#fff', border: 'none', borderRadius: 8, marginTop: 5, textAlign: 'left' },
-  selectedBtn: { width: '100%', padding: 12, background: '#00c853', color: '#fff', border: 'none', borderRadius: 8, marginTop: 5, textAlign: 'left' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 },
+  green: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
+  red: { width: '100%', padding: 14, background: '#d50000', color: '#fff', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
+  yellow: { width: '100%', padding: 14, background: '#ffb300', color: '#111', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
+  itemBtn: { width: '100%', minHeight: 70, padding: 12, background: '#333', color: '#fff', border: 'none', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 15 },
+  execBtn: { width: '100%', minHeight: 85, padding: 12, background: '#5a0000', color: '#fff', border: '2px solid #ff3333', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 16 },
+  selectedBtn: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 6, textAlign: 'center', fontWeight: 'bold' },
   smallBtn: { padding: 10, background: '#444', color: '#fff', border: 'none', borderRadius: 8, margin: 4 },
   itemLinha: { display: 'flex', justifyContent: 'space-between', marginBottom: 6, borderBottom: '1px solid #444', paddingBottom: 4 },
   repor: { marginLeft: 10, padding: 5 }
