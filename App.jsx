@@ -26,9 +26,9 @@ const cardapio = {
     { nome: 'Tulipa', preco: 10 }
   ],
   'Espetos Premium Avulso': [
-    { nome: 'Medalhão de Frango', preco: 12 },
-    { nome: 'Linguiça Cuiabana', preco: 12 },
-    { nome: 'Misto Especial', preco: 12 }
+    { nome: 'Medalhão de Frango', preco: 12, premium: true },
+    { nome: 'Linguiça Cuiabana', preco: 12, premium: true },
+    { nome: 'Misto Especial', preco: 12, premium: true }
   ],
   Executivos: [
     { nome: 'Executivo Mestre Clássico 1', preco: 29.99, qtdEspetos: 2 },
@@ -64,8 +64,12 @@ const cardapio = {
 }
 
 const estoqueInicial = {}
+const precoReferencia = {}
+
 Object.values(cardapio).flat().forEach(item => {
-  estoqueInicial[item.estoqueNome || item.nome] = 50
+  const nomeEstoque = item.estoqueNome || item.nome
+  estoqueInicial[nomeEstoque] = 50
+  if (!precoReferencia[nomeEstoque]) precoReferencia[nomeEstoque] = item.preco
 })
 
 const hoje = () => new Date().toISOString().slice(0, 10)
@@ -79,6 +83,7 @@ export default function App() {
   const [atendente, setAtendente] = useState(localStorage.getItem('atendente_mestre') || '')
   const [pagamento, setPagamento] = useState('dinheiro')
   const [estoque, setEstoque] = useState(estoqueInicial)
+  const [estoqueInicialDia, setEstoqueInicialDia] = useState({})
   const [busca, setBusca] = useState('')
   const [dataRelatorio, setDataRelatorio] = useState(hoje())
   const [executivoSelecionado, setExecutivoSelecionado] = useState(null)
@@ -94,13 +99,7 @@ export default function App() {
 
   useEffect(() => {
     const unsubComandas = onSnapshot(collection(db, 'comandas'), snapshot => {
-      const lista = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-      setComandas(lista)
-
-      if (comandaAtual) {
-        const atual = lista.find(c => c.id === comandaAtual.id)
-        if (atual) setComandaAtual(atual)
-      }
+      setComandas(snapshot.docs.map(d => ({ id: d.id, ...d.data() })))
     })
 
     const unsubHistorico = onSnapshot(collection(db, 'historico'), snapshot => {
@@ -120,7 +119,24 @@ export default function App() {
       unsubHistorico()
       unsubEstoque()
     }
-  }, [comandaAtual?.id])
+  }, [])
+
+  useEffect(() => {
+    if (!comandaAtual) return
+    const atual = comandas.find(c => c.id === comandaAtual.id)
+    if (atual) setComandaAtual(atual)
+  }, [comandas])
+
+  useEffect(() => {
+    const ref = doc(db, 'estoquesIniciais', dataRelatorio)
+
+    const unsub = onSnapshot(ref, snap => {
+      if (snap.exists()) setEstoqueInicialDia(snap.data())
+      else setEstoqueInicialDia({})
+    })
+
+    return () => unsub()
+  }, [dataRelatorio])
 
   const tocarSom = (arquivo) => {
     try { new Audio(arquivo).play() } catch (e) {}
@@ -193,14 +209,7 @@ export default function App() {
     setEspetosExecutivo([])
   }
 
-  const alternarEspetoExecutivo = (espeto) => {
-    const existe = espetosExecutivo.includes(espeto.nome)
-
-    if (existe) {
-      setEspetosExecutivo(espetosExecutivo.filter(e => e !== espeto.nome))
-      return
-    }
-
+  const adicionarEspetoExecutivo = (espeto) => {
     if (espetosExecutivo.length >= executivoSelecionado.qtdEspetos) {
       return alert(`Esse prato permite escolher ${executivoSelecionado.qtdEspetos} espetos.`)
     }
@@ -210,7 +219,20 @@ export default function App() {
       return alert(`${espeto.nome} está sem estoque.`)
     }
 
-    setEspetosExecutivo([...espetosExecutivo, espeto.nome])
+    setEspetosExecutivo([
+      ...espetosExecutivo,
+      {
+        nome: espeto.nome,
+        premium: !!espeto.premium,
+        adicional: espeto.premium ? 10 : 0
+      }
+    ])
+  }
+
+  const removerEspetoExecutivo = (index) => {
+    const novaLista = [...espetosExecutivo]
+    novaLista.splice(index, 1)
+    setEspetosExecutivo(novaLista)
   }
 
   const confirmarExecutivo = async () => {
@@ -223,19 +245,25 @@ export default function App() {
     let novoEstoque = { ...estoque }
 
     for (const espeto of espetosExecutivo) {
-      if ((novoEstoque[espeto] || 0) <= 0) {
+      if ((novoEstoque[espeto.nome] || 0) <= 0) {
         tocarSom('/alerta.mp3')
-        return alert(`${espeto} está sem estoque.`)
+        return alert(`${espeto.nome} está sem estoque.`)
       }
-      novoEstoque[espeto] -= 1
+      novoEstoque[espeto.nome] -= 1
     }
+
+    const adicionalPremium = espetosExecutivo.reduce((acc, e) => acc + (e.adicional || 0), 0)
+    const precoFinal = executivoSelecionado.preco + adicionalPremium
 
     const itemVenda = {
       nome: executivoSelecionado.nome,
-      preco: executivoSelecionado.preco,
+      preco: precoFinal,
+      precoBase: executivoSelecionado.preco,
+      adicionalPremium,
       categoria: 'Executivos',
       tipo: 'executivo',
-      espetosInclusos: [...espetosExecutivo]
+      espetosInclusos: espetosExecutivo.map(e => e.nome),
+      detalhesEspetos: espetosExecutivo
     }
 
     await salvarEstoque(novoEstoque)
@@ -256,7 +284,7 @@ export default function App() {
     let novoEstoque = { ...estoque }
 
     if (item.tipo === 'executivo') {
-      item.espetosInclusos.forEach(e => {
+      ;(item.espetosInclusos || []).forEach(e => {
         novoEstoque[e] = (novoEstoque[e] || 0) + 1
       })
     } else {
@@ -282,7 +310,7 @@ export default function App() {
 
   const descricaoItem = (item) => {
     if (item.tipo === 'executivo') {
-      return `${item.nome} - R$ ${item.preco.toFixed(2)}\n  Espetos inclusos: ${item.espetosInclusos.join(', ')}`
+      return `${item.nome} - R$ ${item.preco.toFixed(2)}\n  Espetos: ${item.espetosInclusos.join(', ')}${item.adicionalPremium ? `\n  Adicional premium: R$ ${item.adicionalPremium.toFixed(2)}` : ''}`
     }
     return `${item.nome} - R$ ${item.preco.toFixed(2)}`
   }
@@ -346,6 +374,25 @@ Obrigado e volte sempre!
     setComandaAtual(null)
   }
 
+  const calcularSaidasEstoque = (vendas) => {
+    const saidas = {}
+
+    vendas.forEach(c => {
+      ;(c.itens || []).forEach(item => {
+        if (item.tipo === 'executivo') {
+          ;(item.espetosInclusos || []).forEach(nome => {
+            saidas[nome] = (saidas[nome] || 0) + 1
+          })
+        } else {
+          const nome = item.estoqueNome || item.nome
+          saidas[nome] = (saidas[nome] || 0) + 1
+        }
+      })
+    })
+
+    return saidas
+  }
+
   const relatorioPorData = (data) => {
     const filtrado = historico.filter(c => c.dataFechamento === data)
 
@@ -383,6 +430,27 @@ Obrigado e volte sempre!
       })
     })
 
+    const saidasEstoque = calcularSaidasEstoque(filtrado)
+
+    const conferenciaEstoque = Object.keys({ ...estoqueInicial, ...estoque }).map(prod => {
+      const inicial = estoqueInicialDia[prod] ?? 0
+      const saida = saidasEstoque[prod] || 0
+      const esperado = inicial - saida
+      const real = estoque[prod] ?? 0
+      const diferenca = real - esperado
+      const valorDiferenca = diferenca < 0 ? Math.abs(diferenca) * (precoReferencia[prod] || 0) : 0
+
+      return {
+        produto: prod,
+        inicial,
+        saida,
+        esperado,
+        real,
+        diferenca,
+        valorDiferenca
+      }
+    })
+
     const lista = Object.entries(produtos)
 
     return {
@@ -392,6 +460,8 @@ Obrigado e volte sempre!
       caixaData,
       totalVendas,
       totalItens,
+      saidasEstoque,
+      conferenciaEstoque,
       maisSaiu: lista.length ? lista.reduce((a, b) => a[1].qtd > b[1].qtd ? a : b) : null,
       menosSaiu: lista.length ? lista.reduce((a, b) => a[1].qtd < b[1].qtd ? a : b) : null
     }
@@ -399,6 +469,7 @@ Obrigado e volte sempre!
 
   const rel = relatorioPorData(dataRelatorio)
   const totalCaixaData = rel.caixaData.dinheiro + rel.caixaData.pix + rel.caixaData.cartao
+  const perdaEstimada = rel.conferenciaEstoque.reduce((acc, item) => acc + item.valorDiferenca, 0)
 
   const imprimirRelatorioData = () => {
     const texto = `
@@ -429,36 +500,51 @@ Cartão: R$ ${rel.caixaData.cartao.toFixed(2)}
 Valor esperado: R$ ${rel.totalVendas.toFixed(2)}
 Valor registrado: R$ ${totalCaixaData.toFixed(2)}
 Diferença: R$ ${(totalCaixaData - rel.totalVendas).toFixed(2)}
+
+------------------------
+CONFERÊNCIA DE ESTOQUE
+
+${rel.conferenciaEstoque.map(i =>
+`${i.produto}
+Inicial: ${i.inicial} | Saída: ${i.saida} | Esperado: ${i.esperado} | Real: ${i.real} | Dif: ${i.diferenca} | Perda estimada: R$ ${i.valorDiferenca.toFixed(2)}`
+).join('\n\n')}
+
+PERDA ESTIMADA TOTAL: R$ ${perdaEstimada.toFixed(2)}
 `
     imprimirTexto(texto)
   }
 
-const limparDiaSelecionado = async () => {
-  const confirmar = confirm(`Deseja apagar o histórico do dia ${dataRelatorio}?`)
+  const registrarEstoqueInicialDia = async () => {
+    const confirmar = confirm(`Registrar o estoque atual como estoque inicial do dia ${dataRelatorio}?`)
+    if (!confirmar) return
 
-  if (!confirmar) return
-
-  const docsDoDia = historico.filter(c => c.dataFechamento === dataRelatorio)
-
-  if (docsDoDia.length === 0) {
-    alert('Nenhuma venda encontrada para essa data.')
-    return
+    await setDoc(doc(db, 'estoquesIniciais', dataRelatorio), estoque)
+    alert('Estoque inicial do dia registrado com sucesso.')
   }
 
-  try {
-    await Promise.all(
-      docsDoDia.map(c =>
-        deleteDoc(doc(db, 'historico', c.id))
-      )
-    )
+  const limparDiaSelecionado = async () => {
+    const confirmar = confirm(`Deseja apagar TODAS as comandas abertas e fechadas do dia ${dataRelatorio}?`)
+    if (!confirmar) return
 
-    alert('Histórico da data apagado com sucesso.')
-  } catch (error) {
-    console.error(error)
-    alert('Erro ao apagar histórico. Verifique as regras do Firebase.')
+    try {
+      const docsDoDia = historico.filter(c => c.dataFechamento === dataRelatorio)
+
+      await Promise.all([
+        ...docsDoDia.map(c => deleteDoc(doc(db, 'historico', c.id))),
+        ...comandas.map(c => deleteDoc(doc(db, 'comandas', c.id)))
+      ])
+
+      setHistorico(historico.filter(c => c.dataFechamento !== dataRelatorio))
+      setComandas([])
+      setComandaAtual(null)
+
+      alert('Comandas abertas e histórico da data foram apagados.')
+    } catch (error) {
+      console.error(error)
+      alert('Erro ao limpar testes do dia.')
+    }
   }
-}
- 
+
   const reporEstoque = async (produto) => {
     const qtd = Number(prompt(`Quantidade para repor ${produto}:`))
     if (!qtd || qtd <= 0) return
@@ -475,7 +561,10 @@ const limparDiaSelecionado = async () => {
     (c.cliente || '').toLowerCase().includes(busca.toLowerCase())
   )
 
-  const opcoesEspetos = cardapio.Espetos
+  const opcoesEspetos = [
+    ...cardapio.Espetos.map(e => ({ ...e, premium: false })),
+    ...cardapio['Espetos Premium Avulso'].map(e => ({ ...e, premium: true }))
+  ]
 
   if (loading) {
     return (
@@ -519,18 +608,31 @@ const limparDiaSelecionado = async () => {
       {executivoSelecionado && (
         <div style={styles.cardDestaque}>
           <h2>{executivoSelecionado.nome}</h2>
-          <p>Selecione {executivoSelecionado.qtdEspetos} espetos tradicionais inclusos.</p>
-          <p>Selecionados: {espetosExecutivo.join(', ') || 'nenhum'}</p>
+          <p>Selecione {executivoSelecionado.qtdEspetos} espetos. Pode repetir o mesmo espeto.</p>
+          <p>Premium substitui o espeto tradicional por + R$10,00.</p>
 
-          {opcoesEspetos.map(e => (
-            <button
-              key={e.nome}
-              onClick={() => alternarEspetoExecutivo(e)}
-              style={espetosExecutivo.includes(e.nome) ? styles.selectedBtn : styles.itemBtn}
-            >
-              {e.nome} | Estoque: {estoque[e.nome] || 0}
-            </button>
+          <h3>Selecionados:</h3>
+          {espetosExecutivo.length === 0 && <p>Nenhum selecionado</p>}
+          {espetosExecutivo.map((e, index) => (
+            <div key={index} style={styles.itemLinha}>
+              <span>{index + 1}. {e.nome} {e.premium ? '(Premium + R$10)' : ''}</span>
+              <button onClick={() => removerEspetoExecutivo(index)}>❌</button>
+            </div>
           ))}
+
+          <div style={styles.grid}>
+            {opcoesEspetos.map(e => (
+              <button
+                key={e.nome}
+                onClick={() => adicionarEspetoExecutivo(e)}
+                style={e.premium ? styles.premiumBtn : styles.itemBtn}
+              >
+                <strong>{e.nome}</strong><br />
+                {e.premium ? 'Premium + R$10 no executivo' : 'Incluso no executivo'}<br />
+                Estoque: {estoque[e.nome] || 0}
+              </button>
+            ))}
+          </div>
 
           <button onClick={confirmarExecutivo} style={styles.green}>✅ Confirmar Executivo</button>
           <button onClick={() => setExecutivoSelecionado(null)} style={styles.red}>Cancelar</button>
@@ -565,7 +667,7 @@ const limparDiaSelecionado = async () => {
             <div key={index} style={styles.itemLinha}>
               <span>
                 {item.nome} — R$ {item.preco.toFixed(2)}
-                {item.tipo === 'executivo' && <small><br />Espetos inclusos: {item.espetosInclusos.join(', ')}</small>}
+                {item.tipo === 'executivo' && <small><br />Espetos: {item.espetosInclusos.join(', ')}</small>}
               </span>
               <button onClick={() => removerItem(index)}>❌</button>
             </div>
@@ -588,8 +690,9 @@ const limparDiaSelecionado = async () => {
       <div style={styles.card}>
         <h2>Relatório por Data</h2>
         <input type="date" value={dataRelatorio} onChange={e => setDataRelatorio(e.target.value)} style={styles.input} />
-        <button onClick={imprimirRelatorioData} style={styles.green}>🧾 Imprimir Relatório da Data</button>
-        <button onClick={limparDiaSelecionado} style={styles.red}>🧹 Limpar Histórico da Data</button>
+        <button onClick={registrarEstoqueInicialDia} style={styles.yellow}>📌 Registrar Estoque Inicial do Dia</button>
+        <button onClick={imprimirRelatorioData} style={styles.green}>🧾 Imprimir Fechamento Detalhado</button>
+        <button onClick={limparDiaSelecionado} style={styles.red}>🧹 Limpar Testes do Dia</button>
       </div>
 
       <div style={styles.card}>
@@ -600,6 +703,18 @@ const limparDiaSelecionado = async () => {
         <p>Pix: R$ {rel.caixaData.pix.toFixed(2)}</p>
         <p>Cartão: R$ {rel.caixaData.cartao.toFixed(2)}</p>
         <h3>Valor esperado: R$ {rel.totalVendas.toFixed(2)}</h3>
+        <h3 style={{ color: perdaEstimada > 0 ? '#ff3333' : '#00c853' }}>Perda estimada no estoque: R$ {perdaEstimada.toFixed(2)}</h3>
+      </div>
+
+      <div style={styles.card}>
+        <h2>Conferência de Estoque</h2>
+        {rel.conferenciaEstoque.map(i => (
+          <div key={i.produto} style={styles.box}>
+            <strong>{i.produto}</strong>
+            <p>Inicial: {i.inicial} | Saída: {i.saida} | Esperado: {i.esperado} | Real: {i.real}</p>
+            <p>Diferença: {i.diferenca} | Perda estimada: R$ {i.valorDiferenca.toFixed(2)}</p>
+          </div>
+        ))}
       </div>
 
       <div style={styles.card}>
@@ -609,7 +724,7 @@ const limparDiaSelecionado = async () => {
             {prod}: {estoque[prod]} un.
             {estoque[prod] <= 5 && <b style={{ color: 'red' }}> ⚠️ baixo</b>}
             <button onClick={() => reporEstoque(prod)} style={styles.repor}>Repor</button>
-            <button onClick={() => definirEstoque(prod)} style={styles.repor}>Definir</button>
+            <button onClick={() => definirEstoque(prod)} style={styles.repor}>Ajustar</button>
           </p>
         ))}
       </div>
@@ -633,6 +748,7 @@ const styles = {
   red: { width: '100%', padding: 14, background: '#d50000', color: '#fff', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
   yellow: { width: '100%', padding: 14, background: '#ffb300', color: '#111', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
   itemBtn: { width: '100%', minHeight: 70, padding: 12, background: '#333', color: '#fff', border: 'none', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 15 },
+  premiumBtn: { width: '100%', minHeight: 70, padding: 12, background: '#3b2600', color: '#ffd166', border: '1px solid #ffb300', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 15 },
   execBtn: { width: '100%', minHeight: 85, padding: 12, background: '#5a0000', color: '#fff', border: '2px solid #ff3333', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 16 },
   selectedBtn: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 6, textAlign: 'center', fontWeight: 'bold' },
   smallBtn: { padding: 10, background: '#444', color: '#fff', border: 'none', borderRadius: 8, margin: 4 },
