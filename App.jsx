@@ -72,7 +72,14 @@ Object.values(cardapio).flat().forEach(item => {
   if (!precoReferencia[nomeEstoque]) precoReferencia[nomeEstoque] = item.preco
 })
 
-const hoje = () => new Date().toISOString().slice(0, 10)
+const hoje = () => {
+  const data = new Date()
+  const ano = data.getFullYear()
+  const mes = String(data.getMonth() + 1).padStart(2, '0')
+  const dia = String(data.getDate()).padStart(2, '0')
+
+  return `${ano}-${mes}-${dia}`
+}
 
 export default function App() {
   const [loading, setLoading] = useState(true)
@@ -359,7 +366,7 @@ Obrigado e volte sempre!
     if (!comandaAtual) return
     if (!comandaAtual.itens || comandaAtual.itens.length === 0) return alert('Comanda sem itens.')
 
-    const dataFechamento = new Date().toISOString().slice(0, 10)
+    const dataFechamento = hoje()
 
     await addDoc(collection(db, 'historico'), {
       ...comandaAtual,
@@ -471,8 +478,8 @@ Obrigado e volte sempre!
   const totalCaixaData = rel.caixaData.dinheiro + rel.caixaData.pix + rel.caixaData.cartao
   const perdaEstimada = rel.conferenciaEstoque.reduce((acc, item) => acc + item.valorDiferenca, 0)
 
-  const imprimirRelatorioData = () => {
-    const texto = `
+ const imprimirRelatorioData = () => {
+  const texto = `
 FECHAMENTO DO DIA ${dataRelatorio}
 MESTRE DO ESPETO
 
@@ -484,11 +491,16 @@ RESUMO POR CATEGORIA
 
 ${Object.keys(rel.categorias).map(cat => {
   const c = rel.categorias[cat]
-  return `${cat.toUpperCase()} - R$ ${c.total.toFixed(2)} | ${c.qtd} un.\n${Object.keys(c.produtos).map(p => {
-    const prod = c.produtos[p]
-    return `  - ${p}: ${prod.qtd} un. | R$ ${prod.total.toFixed(2)}`
-  }).join('\n')}`
-}).join('\n\n')}
+
+  return `${cat.toUpperCase()} - R$ ${c.total.toFixed(2)} | ${c.qtd} un.
+
+${Object.keys(c.produtos).map(produto => {
+    const p = c.produtos[produto]
+    return `  - ${produto}: ${p.qtd} un. | R$ ${p.total.toFixed(2)}`
+  }).join('\n')}
+
+`
+}).join('\n')}
 
 ------------------------
 CAIXA DO DIA
@@ -502,17 +514,34 @@ Valor registrado: R$ ${totalCaixaData.toFixed(2)}
 Diferença: R$ ${(totalCaixaData - rel.totalVendas).toFixed(2)}
 
 ------------------------
+CONSUMO REAL DE ESTOQUE
+
+${Object.entries(rel.saidasEstoque || {})
+  .map(([nome, qtd]) => `${nome}: ${qtd} un.`)
+  .join('\n')}
+
+------------------------
 CONFERÊNCIA DE ESTOQUE
 
-${rel.conferenciaEstoque.map(i =>
-`${i.produto}
-Inicial: ${i.inicial} | Saída: ${i.saida} | Esperado: ${i.esperado} | Real: ${i.real} | Dif: ${i.diferenca} | Perda estimada: R$ ${i.valorDiferenca.toFixed(2)}`
-).join('\n\n')}
+${rel.conferenciaEstoque.map(item => `
+${item.produto}
 
+Inicial: ${item.inicial}
+Saída: ${item.saida}
+Esperado: ${item.esperado}
+Real contado: ${item.real}
+Diferença: ${item.diferenca}
+Perda estimada: R$ ${item.valorDiferenca.toFixed(2)}
+`).join('\n')}
+
+------------------------
 PERDA ESTIMADA TOTAL: R$ ${perdaEstimada.toFixed(2)}
+
+MESTRE DO ESPETO PDV
 `
-    imprimirTexto(texto)
-  }
+
+  imprimirTexto(texto)
+}
 
   const registrarEstoqueInicialDia = async () => {
     const confirmar = confirm(`Registrar o estoque atual como estoque inicial do dia ${dataRelatorio}?`)
