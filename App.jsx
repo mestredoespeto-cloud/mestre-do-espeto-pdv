@@ -1,5 +1,3 @@
-import React, { useEffect, useState } from 'react'
-import { db } from './firebase'
 import {
   collection,
   doc,
@@ -8,7 +6,10 @@ import {
   updateDoc,
   deleteDoc,
   onSnapshot,
-  serverTimestamp
+  serverTimestamp,
+  getDocs,
+  query,
+  where
 } from 'firebase/firestore'
 
 const cardapio = {
@@ -26,10 +27,11 @@ const cardapio = {
     { nome: 'Tulipa', preco: 10 }
   ],
   'Espetos Premium Avulso': [
-    { nome: 'Medalhão de Frango', preco: 12, premium: true },
-    { nome: 'Linguiça Cuiabana', preco: 12, premium: true },
-    { nome: 'Misto Especial', preco: 12, premium: true }
-  ],
+  { nome: 'Medalhão de Frango', preco: 12, premium: true },
+  { nome: 'Linguiça Cuiabana', preco: 12, premium: true },
+  { nome: 'Misto Especial', preco: 12, premium: true },
+  { nome: 'Espeto de Almôndega', preco: 12, premium: true }
+],
   Executivos: [
     { nome: 'Executivo Mestre Clássico 1', preco: 29.99, qtdEspetos: 2 },
     { nome: 'Executivo Mestre Clássico 2', preco: 39.99, qtdEspetos: 3 }
@@ -41,26 +43,28 @@ const cardapio = {
     { nome: 'Linguiça Cuiabana no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Linguiça Cuiabana' },
     { nome: 'Misto Especial no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Misto Especial' }
   ],
-  Bebidas: [
-    { nome: 'Água sem Gás', preco: 3 },
-    { nome: 'Água com Gás', preco: 3 },
-    { nome: 'Coca-Cola Lata', preco: 6 },
-    { nome: 'Coca-Cola Zero Lata', preco: 6 },
-    { nome: 'Fanta Laranja Lata', preco: 6 },
-    { nome: 'Fanta Uva Lata', preco: 6 },
-    { nome: 'Suco Del Valle Laranja 450ml', preco: 6 },
-    { nome: 'Suco Del Valle Uva 450ml', preco: 6 },
-    { nome: 'Suco Kapo Laranja', preco: 5 },
-    { nome: 'Suco Kapo Maracujá', preco: 5 },
-    { nome: 'Suco Kapo Morango', preco: 5 },
-    { nome: 'Suco Kapo Uva', preco: 5 },
-    { nome: 'Brahma Lata 350ml', preco: 5 },
-    { nome: 'Skol Lata 350ml', preco: 5 },
-    { nome: 'Original Lata 350ml', preco: 8 },
-    { nome: 'Heineken Long Neck 330ml', preco: 12 },
-    { nome: 'Heineken Long Neck Zero 330ml', preco: 12 },
-    { nome: 'Energético Monster 473ml', preco: 12 }
-  ]
+ Bebidas: [
+  { nome: 'Água sem Gás', preco: 3 },
+  { nome: 'Água com Gás', preco: 3 },
+  { nome: 'Coca-Cola Lata', preco: 6 },
+  { nome: 'Coca-Cola Zero Lata', preco: 6 },
+  { nome: 'Fanta Laranja Lata', preco: 6 },
+  { nome: 'Fanta Uva Lata', preco: 6 },
+  { nome: 'Suco Del Valle Laranja 450ml', preco: 6 },
+  { nome: 'Suco Del Valle Uva 450ml', preco: 6 },
+  { nome: 'Suco Kapo Laranja', preco: 5 },
+  { nome: 'Suco Kapo Maracujá', preco: 5 },
+  { nome: 'Suco Kapo Morango', preco: 5 },
+  { nome: 'Suco Kapo Uva', preco: 5 },
+  { nome: 'Brahma Lata 350ml', preco: 5 },
+  { nome: 'Skol Lata 350ml', preco: 5 },
+  { nome: 'Original Lata 350ml', preco: 8 },
+  { nome: 'Original 300ml', preco: 6 },
+  { nome: 'Combo 3 Original', preco: 15 },
+  { nome: 'Heineken Long Neck 330ml', preco: 12 },
+  { nome: 'Heineken Long Neck Zero 330ml', preco: 12 },
+  { nome: 'Energético Monster 473ml', preco: 12 }
+]
 }
 
 const estoqueInicial = {}
@@ -552,28 +556,43 @@ MESTRE DO ESPETO PDV
   }
 
   const limparDiaSelecionado = async () => {
-    const confirmar = confirm(`Deseja apagar TODAS as comandas abertas e fechadas do dia ${dataRelatorio}?`)
-    if (!confirmar) return
+  const confirmar = confirm(`Deseja apagar TODAS as comandas abertas e fechadas do dia ${dataRelatorio}?`)
+  if (!confirmar) return
 
-    try {
-      const docsDoDia = historico.filter(c => c.dataFechamento === dataRelatorio)
+  try {
+    const qHistorico = query(
+      collection(db, 'historico'),
+      where('dataFechamento', '==', dataRelatorio)
+    )
 
-      await Promise.all([
-        ...docsDoDia.map(c => deleteDoc(doc(db, 'historico', c.id))),
-        ...comandas.map(c => deleteDoc(doc(db, 'comandas', c.id)))
-      ])
+    const historicoSnapshot = await getDocs(qHistorico)
 
-      setHistorico(historico.filter(c => c.dataFechamento !== dataRelatorio))
-      setComandas([])
-      setComandaAtual(null)
+    const promessasHistorico = historicoSnapshot.docs.map(d =>
+      deleteDoc(doc(db, 'historico', d.id))
+    )
 
-      alert('Comandas abertas e histórico da data foram apagados.')
-    } catch (error) {
-      console.error(error)
-      alert('Erro ao limpar testes do dia.')
-    }
+    const promessasComandas = comandas.map(c =>
+      deleteDoc(doc(db, 'comandas', c.id))
+    )
+
+    await Promise.all([
+      ...promessasHistorico,
+      ...promessasComandas
+    ])
+
+    setHistorico([])
+    setComandas([])
+    setComandaAtual(null)
+
+    alert('Resumo, histórico e comandas abertas foram apagados com sucesso.')
+
+    window.location.reload()
+
+  } catch (error) {
+    console.error(error)
+    alert('Erro ao limpar testes do dia.')
   }
-
+}
   const reporEstoque = async (produto) => {
     const qtd = Number(prompt(`Quantidade para repor ${produto}:`))
     if (!qtd || qtd <= 0) return
