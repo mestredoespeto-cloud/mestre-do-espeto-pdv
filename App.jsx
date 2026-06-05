@@ -161,22 +161,49 @@ export default function App() {
   }
 
   const criarComanda = async () => {
-    if (!atendente.trim()) return alert('Digite o nome do atendente.')
-    if (!cliente.trim()) return alert('Digite nome, mesa ou referência.')
+  if (!atendente.trim()) {
+    alert('Digite o nome do atendente.')
+    return
+  }
 
+  if (!cliente.trim()) {
+    alert('Digite nome, mesa ou referência.')
+    return
+  }
+
+  try {
     const nova = {
-      cliente,
-      atendente,
+      cliente: cliente.trim(),
+      atendente: atendente.trim(),
       itens: [],
       abertaEm: new Date().toISOString(),
       criadoEm: serverTimestamp()
     }
 
-    tocarSom('/nova-comanda.mp3')
     const ref = await addDoc(collection(db, 'comandas'), nova)
-    setComandaAtual({ id: ref.id, ...nova })
+
+    setComandaAtual({
+      id: ref.id,
+      ...nova
+    })
+
+    setComandas(prev => [
+      ...prev,
+      {
+        id: ref.id,
+        ...nova
+      }
+    ])
+
     setCliente('')
+    tocarSom('/nova-comanda.mp3')
+
+    alert('Comanda criada com sucesso!')
+  } catch (error) {
+    console.error('Erro ao criar comanda:', error)
+    alert('Erro ao criar comanda. Verifique o Firebase.')
   }
+}
 
   const atualizarComanda = async (nova) => {
     setComandaAtual(nova)
