@@ -621,9 +621,39 @@ Obrigado e volte sempre!
       criadoEm: serverTimestamp()
     })
 
-    await deleteDoc(doc(db, 'comandas', comandaAtual.id))
-    setComandaAtual(null)
-  }
+     await deleteDoc(doc(db, 'comandas', comandaAtual.id))
+  setComandaAtual(null)
+}
+
+const excluirComandaAberta = async () => {
+  if (!comandaAtual) return alert('Selecione uma comanda para excluir.')
+
+  const confirmar = confirm(
+    `Deseja excluir a comanda de ${comandaAtual.cliente}? Os itens serão devolvidos ao estoque.`
+  )
+
+  if (!confirmar) return
+
+  let novoEstoque = { ...estoque }
+
+  ;(comandaAtual.itens || []).forEach(item => {
+    if (item.tipo === 'executivo') {
+      ;(item.espetosInclusos || []).forEach(nome => {
+        novoEstoque[nome] = (novoEstoque[nome] || 0) + 1
+      })
+    } else {
+      const nomeEstoque = item.estoqueNome || item.nome
+      novoEstoque[nomeEstoque] = (novoEstoque[nomeEstoque] || 0) + 1
+    }
+  })
+
+  await salvarEstoque(novoEstoque)
+  await deleteDoc(doc(db, 'comandas', comandaAtual.id))
+
+  setComandaAtual(null)
+
+  alert('Comanda excluída com sucesso.')
+}
 
   const calcularSaidasEstoque = (vendas) => {
     const saidas = {}
@@ -1182,9 +1212,33 @@ MESTRE DO ESPETO PDV
             <option value="cartao">Cartão</option>
           </select>
 
-          <button onClick={imprimirCozinha} style={styles.yellow}>👨‍🍳 Imprimir Pedido Cozinha</button>
-          <button onClick={imprimirCliente} style={styles.green}>🖨️ Imprimir Comanda Cliente</button>
-          <button onClick={fecharComanda} style={styles.red}>💰 Fechar Comanda</button>
+          <button onClick={imprimirCozinha} style={styles.yellow}>
+  👨‍🍳 Imprimir Pedido Cozinha
+</button>
+
+<button onClick={imprimirCliente} style={styles.green}>
+  🖨️ Imprimir Comanda Cliente
+</button>
+
+<button
+  onClick={excluirComandaAberta}
+  style={{
+    background: '#dc2626',
+    color: '#fff',
+    width: '100%',
+    padding: '12px',
+    borderRadius: '8px',
+    marginBottom: '10px',
+    border: 'none',
+    cursor: 'pointer'
+  }}
+>
+  🗑️ Excluir Comanda Aberta
+</button>
+
+<button onClick={fecharComanda} style={styles.red}>
+  💰 Fechar Comanda
+</button>
         </div>
       )}
 
