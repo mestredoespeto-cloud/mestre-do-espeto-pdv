@@ -153,6 +153,9 @@ export default function App() {
   const [cardapio, setCardapio] = useState(cardapioPadrao)
   const [itensCardapio, setItensCardapio] = useState([])
 
+  const [mostrarGestaoCardapio, setMostrarGestaoCardapio] = useState(false)
+  const [mostrarEstoque, setMostrarEstoque] = useState(false)
+
   useEffect(() => {
     setTimeout(() => setLoading(false), 1000)
   }, [])
@@ -1242,9 +1245,18 @@ MESTRE DO ESPETO PDV
         </div>
       )}
 
-      <div style={styles.card}>
-        <h2>⚙️ Gestão do Cardápio</h2>
-        <button onClick={adicionarItemCardapio} style={styles.green}>➕ Adicionar Item ao Cardápio</button>
+     <div style={styles.card}>
+  <button
+    onClick={() => setMostrarGestaoCardapio(!mostrarGestaoCardapio)}
+    style={styles.yellow}
+  >
+    ⚙️ {mostrarGestaoCardapio ? 'Ocultar Gestão do Cardápio' : 'Abrir Gestão do Cardápio'}
+  </button>
+
+  {mostrarGestaoCardapio && (
+    <>
+      <h2>⚙️ Gestão do Cardápio</h2>
+      <button onClick={adicionarItemCardapio} style={styles.green}>➕ Adicionar Item ao Cardápio</button>
 
         {Object.keys(cardapio).map(cat => (
           <div key={cat} style={styles.box}>
@@ -1263,6 +1275,8 @@ MESTRE DO ESPETO PDV
               </div>
             ))}
           </div>
+
+          </>
         ))}
       </div>
 
