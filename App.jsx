@@ -1284,8 +1284,19 @@ MESTRE DO ESPETO PDV
     </>
   )}
 </div>
-        <input type="date" value={dataRelatorio} onChange={e => setDataRelatorio(e.target.value)} style={styles.input} />
-        <button onClick={registrarEstoqueInicialDia} style={styles.yellow}>📌 Registrar Estoque Inicial do Dia</button>
+
+<div style={styles.card}>
+  <h2>Relatório por Data</h2>
+  <input 
+     type="date" 
+     value={dataRelatorio} 
+     onChange={e => setDataRelatorio(e.target.value)} 
+     style={styles.input}
+/>
+        
+        <button onClick={registrarEstoqueInicialDia} style={styles.yellow}>
+📌 Registrar Estoque Inicial do Dia
+</button>
         <button onClick={imprimirRelatorioData} style={styles.green}>🧾 Imprimir Fechamento Detalhado</button>
         <button onClick={limparDiaSelecionado} style={styles.red}>🧹 Limpar Testes do Dia</button>
       </div>
