@@ -1136,15 +1136,35 @@ MESTRE DO ESPETO PDV
           ))}
 
           <h2>Itens</h2>
-          {(comandaAtual.itens || []).map((item, index) => (
-            <div key={index} style={styles.itemLinha}>
-              <span>
-                {item.nome} — R$ {item.preco.toFixed(2)}
-                {item.tipo === 'executivo' && <small><br />Espetos: {item.espetosInclusos.join(', ')}</small>}
-              </span>
-              <button onClick={() => removerItem(index)}>❌</button>
-            </div>
-          ))}
+          {(comandaAtual.itens || []).map((item, index) => {
+  const tipoAtual = comandaAtual.tipoComanda || 'Cliente'
+  const nomeEstoque = item.estoqueNome || item.nome
+  const custoItem = custoProduto(nomeEstoque)
+
+  return (
+    <div key={index} style={styles.itemLinha}>
+      <span>
+        {item.nome} — R$ {Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)}
+
+        {tipoAtual !== 'Cliente' && (
+          <small>
+            <br />
+            Custo: R$ {custoItem.toFixed(2)}
+          </small>
+        )}
+
+        {item.tipo === 'executivo' && (
+          <small>
+            <br />
+            Espetos: {item.espetosInclusos.join(', ')}
+          </small>
+        )}
+      </span>
+
+      <button onClick={() => removerItem(index)}>❌</button>
+    </div>
+  )
+})}
 
           {(comandaAtual.tipoComanda || 'Cliente') === 'Cliente' ? (
             <h2>Total: R$ {total.toFixed(2)}</h2>
