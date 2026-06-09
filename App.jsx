@@ -15,7 +15,7 @@ import {
   where
 } from 'firebase/firestore'
 
-const cardapio = {
+const cardapioPadrao = {
   Espetos: [
     { nome: 'Carne Bovina', preco: 10 },
     { nome: 'Costela', preco: 10 },
@@ -73,7 +73,7 @@ const cardapio = {
 const estoqueInicial = {}
 const precoReferencia = {}
 
-Object.values(cardapio).flat().forEach(item => {
+Object.values(cardapioPadrao).flat().forEach(item => {
   const nomeEstoque = item.estoqueNome || item.nome
   estoqueInicial[nomeEstoque] = 50
   if (!precoReferencia[nomeEstoque]) precoReferencia[nomeEstoque] = item.preco
@@ -86,6 +86,52 @@ const hoje = () => {
   const dia = String(data.getDate()).padStart(2, '0')
 
   return `${ano}-${mes}-${dia}`
+}
+
+const custosPadrao = {
+  'Carne Bovina': 5.2,
+  'Frango': 4,
+  'Kafta': 5,
+  'Medalhão de Frango': 7,
+  'Original 300ml': 2,
+  'Coca-Cola Lata': 3.7
+}
+
+const montarItensPadraoCardapio = () => {
+  const itens = []
+
+  Object.keys(cardapioPadrao).forEach(categoria => {
+    cardapioPadrao[categoria].forEach(item => {
+      itens.push({
+        ...item,
+        categoria,
+        precoVenda: item.preco,
+        precoCusto: custosPadrao[item.nome] || 0,
+        controlaEstoque: true,
+        ativo: true
+      })
+    })
+  })
+
+  return itens
+}
+
+const agruparCardapio = (itens) => {
+  const grupos = {}
+
+  itens
+    .filter(item => item.ativo !== false)
+    .forEach(item => {
+      const categoria = item.categoria || 'Outros'
+      if (!grupos[categoria]) grupos[categoria] = []
+
+      grupos[categoria].push({
+        ...item,
+        preco: Number(item.precoVenda ?? item.preco ?? 0)
+      })
+    })
+
+  return grupos
 }
 
 export default function App() {
@@ -102,6 +148,8 @@ export default function App() {
   const [dataRelatorio, setDataRelatorio] = useState(hoje())
   const [executivoSelecionado, setExecutivoSelecionado] = useState(null)
   const [espetosExecutivo, setEspetosExecutivo] = useState([])
+  const [cardapio, setCardapio] = useState(cardapioPadrao)
+  const [itensCardapio, setItensCardapio] = useState([])
 
   useEffect(() => {
     setTimeout(() => setLoading(false), 1000)
@@ -151,6 +199,32 @@ export default function App() {
 
     return () => unsub()
   }, [dataRelatorio])
+
+  useEffect(() => {
+    const unsubCardapio = onSnapshot(collection(db, 'cardapio'), async snapshot => {
+      if (snapshot.empty) {
+        const itensPadrao = montarItensPadraoCardapio()
+
+        await Promise.all(
+          itensPadrao.map(item => addDoc(collection(db, 'cardapio'), item))
+        )
+
+        setItensCardapio(itensPadrao)
+        setCardapio(agruparCardapio(itensPadrao))
+        return
+      }
+
+      const itens = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
+      }))
+
+      setItensCardapio(itens)
+      setCardapio(agruparCardapio(itens))
+    })
+
+    return () => unsubCardapio()
+  }, [])
 
   const tocarSom = (arquivo) => {
     try { new Audio(arquivo).play() } catch (e) {}
@@ -479,7 +553,8 @@ Obrigado e volte sempre!
       const esperado = inicial - saida
       const real = estoque[prod] ?? 0
       const diferenca = real - esperado
-      const valorDiferenca = diferenca < 0 ? Math.abs(diferenca) * (precoReferencia[prod] || 0) : 0
+      const precoBase = Object.values(cardapio).flat().find(item => (item.estoqueNome || item.nome) === prod)?.preco || precoReferencia[prod] || 0
+      const valorDiferenca = diferenca < 0 ? Math.abs(diferenca) * precoBase : 0
 
       return {
         produto: prod,
@@ -635,6 +710,104 @@ MESTRE DO ESPETO PDV
     await salvarEstoque({ ...estoque, [produto]: qtd })
   }
 
+  const adicionarItemCardapio = async () => {
+    const nome = prompt('Nome do item:')
+    if (!nome || !nome.trim()) return
+
+    const categoria = prompt('Categoria: Espetos, Espetos Premium Avulso, Executivos, Adicionais ou Bebidas:', 'Espetos')
+    if (!categoria || !categoria.trim()) return
+
+    const precoVenda = Number(String(prompt('Preço de venda:', '10') || '').replace(',', '.'))
+    if (Number.isNaN(precoVenda) || precoVenda < 0) return alert('Preço de venda inválido.')
+
+    const precoCusto = Number(String(prompt('Preço de custo:', '0') || '').replace(',', '.'))
+    if (Number.isNaN(precoCusto) || precoCusto < 0) return alert('Preço de custo inválido.')
+
+    const premium = confirm('Este item é premium? Clique OK para SIM ou Cancelar para NÃO.')
+
+    let qtdEspetos = null
+    if (categoria === 'Executivos') {
+      qtdEspetos = Number(prompt('Quantos espetos este executivo permite escolher?', '2'))
+      if (!qtdEspetos || qtdEspetos <= 0) return alert('Quantidade de espetos inválida.')
+    }
+
+    const novoItem = {
+      nome: nome.trim(),
+      categoria: categoria.trim(),
+      precoVenda,
+      precoCusto,
+      preco: precoVenda,
+      premium,
+      controlaEstoque: true,
+      ativo: true
+    }
+
+    if (qtdEspetos) novoItem.qtdEspetos = qtdEspetos
+
+    await addDoc(collection(db, 'cardapio'), novoItem)
+
+    const nomeEstoque = novoItem.estoqueNome || novoItem.nome
+    if (estoque[nomeEstoque] === undefined) {
+      await salvarEstoque({ ...estoque, [nomeEstoque]: 0 })
+    }
+
+    alert('Item adicionado ao cardápio com sucesso.')
+  }
+
+  const editarItemCardapio = async (item) => {
+    if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
+
+    const novoNome = prompt('Nome do item:', item.nome)
+    if (!novoNome || !novoNome.trim()) return
+
+    const novaCategoria = prompt('Categoria:', item.categoria || 'Espetos')
+    if (!novaCategoria || !novaCategoria.trim()) return
+
+    const precoVenda = Number(String(prompt('Preço de venda:', String(item.precoVenda ?? item.preco ?? 0)) || '').replace(',', '.'))
+    if (Number.isNaN(precoVenda) || precoVenda < 0) return alert('Preço de venda inválido.')
+
+    const precoCusto = Number(String(prompt('Preço de custo:', String(item.precoCusto ?? 0)) || '').replace(',', '.'))
+    if (Number.isNaN(precoCusto) || precoCusto < 0) return alert('Preço de custo inválido.')
+
+    const premium = confirm('Este item é premium? Clique OK para SIM ou Cancelar para NÃO.')
+
+    const dadosAtualizados = {
+      nome: novoNome.trim(),
+      categoria: novaCategoria.trim(),
+      precoVenda,
+      precoCusto,
+      preco: precoVenda,
+      premium,
+      ativo: item.ativo !== false,
+      controlaEstoque: item.controlaEstoque !== false
+    }
+
+    if (item.qtdEspetos) dadosAtualizados.qtdEspetos = item.qtdEspetos
+    if (item.estoqueNome) dadosAtualizados.estoqueNome = item.estoqueNome
+    if (item.premiumExecutivo) dadosAtualizados.premiumExecutivo = item.premiumExecutivo
+
+    await updateDoc(doc(db, 'cardapio', item.id), dadosAtualizados)
+    alert('Item atualizado com sucesso.')
+  }
+
+  const alternarAtivoItemCardapio = async (item) => {
+    if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
+
+    await updateDoc(doc(db, 'cardapio', item.id), {
+      ativo: item.ativo === false ? true : false
+    })
+  }
+
+  const excluirItemCardapio = async (item) => {
+    if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
+
+    const confirmar = confirm(`Deseja excluir ${item.nome} do cardápio?`)
+    if (!confirmar) return
+
+    await deleteDoc(doc(db, 'cardapio', item.id))
+    alert('Item excluído do cardápio.')
+  }
+
   const comandasFiltradas = comandas.filter(c =>
     (c.cliente || '').toLowerCase().includes(busca.toLowerCase())
   )
@@ -764,6 +937,30 @@ MESTRE DO ESPETO PDV
           <button onClick={fecharComanda} style={styles.red}>💰 Fechar Comanda</button>
         </div>
       )}
+
+      <div style={styles.card}>
+        <h2>⚙️ Gestão do Cardápio</h2>
+        <button onClick={adicionarItemCardapio} style={styles.green}>➕ Adicionar Item ao Cardápio</button>
+
+        {Object.keys(cardapio).map(cat => (
+          <div key={cat} style={styles.box}>
+            <h3>{cat}</h3>
+            {cardapio[cat].map(item => (
+              <div key={item.id || item.nome} style={styles.itemLinha}>
+                <span>
+                  <strong>{item.nome}</strong><br />
+                  Venda: R$ {Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)} | Custo: R$ {Number(item.precoCusto ?? 0).toFixed(2)}
+                </span>
+                <span>
+                  <button onClick={() => editarItemCardapio(item)} style={styles.repor}>Editar</button>
+                  <button onClick={() => alternarAtivoItemCardapio(item)} style={styles.repor}>Desativar</button>
+                  <button onClick={() => excluirItemCardapio(item)} style={styles.repor}>Excluir</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
 
       <div style={styles.card}>
         <h2>Relatório por Data</h2>
