@@ -1315,18 +1315,41 @@ MESTRE DO ESPETO PDV
       </div>
 
       <div style={styles.card}>
-        <h2>Conferência de Estoque</h2>
-        {rel.conferenciaEstoque.map(i => (
-          <div key={i.produto} style={styles.box}>
-            <strong>{i.produto}</strong>
-            <p>Inicial: {i.inicial} | Saída: {i.saida} | Esperado: {i.esperado} | Real: {i.real}</p>
-            <p>Diferença: {i.diferenca} | Perda estimada: R$ {i.valorDiferenca.toFixed(2)}</p>
-          </div>
-        ))}
-      </div>
+  <button
+    onClick={() => setMostrarEstoque(!mostrarEstoque)}
+    style={styles.yellow}
+  >
+    📦 {mostrarEstoque ? 'Ocultar Estoque' : 'Abrir Estoque'}
+  </button>
 
-      <div style={styles.card}>
-        <h2>Estoque em Tempo Real</h2>
+ {mostrarEstoque && (
+  <>
+    <h2>Conferência de Estoque</h2>
+
+    {rel.conferenciaEstoque.map(i => (
+      <div key={i.produto} style={styles.box}>
+        <strong>{i.produto}</strong>
+
+        <p>
+          Inicial: {i.inicial} |
+          Saída: {i.saida} |
+          Esperado: {i.esperado} |
+          Real: {i.real}
+        </p>
+
+        <p>
+          Diferença: {i.diferenca} |
+          Perda estimada: R$ {i.valorDiferenca.toFixed(2)}
+        </p>
+      </div>
+    ))}
+  </>
+)}
+</div>
+
+{mostrarEstoque && (
+  <div style={styles.card}>
+    <h2>Estoque em Tempo Real</h2>
         {Object.keys(estoque).map(prod => (
           <p key={prod}>
             {prod}: {estoque[prod]} un.
@@ -1336,6 +1359,7 @@ MESTRE DO ESPETO PDV
           </p>
         ))}
       </div>
+)}
     </div>
   )
 }
