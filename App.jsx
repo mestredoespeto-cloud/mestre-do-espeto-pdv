@@ -523,8 +523,16 @@ export default function App() {
     await atualizarComanda({ ...comandaAtual, itens: novosItens })
   }
 
+  const financeiroComandaAtual = comandaAtual
+    ? calcularFinanceiroComanda(comandaAtual)
+    : { totalVenda: 0, totalCusto: 0, totalRepasse: 0, quantidadeEspetosInternos: 0 }
+
+  const totalVendaComandaAtual = Number(financeiroComandaAtual.totalVenda || 0)
+
   const total = comandaAtual
-    ? (comandaAtual.itens || []).reduce((acc, i) => acc + i.preco, 0)
+    ? ((comandaAtual.tipoComanda || 'Cliente') === 'Cliente'
+      ? totalVendaComandaAtual
+      : Number(financeiroComandaAtual.totalRepasse || 0))
     : 0
 
   const imprimirTexto = (texto) => {
@@ -574,8 +582,11 @@ Atendente: ${comandaAtual.atendente}
 ------------------------
 ${(comandaAtual.itens || []).map(descricaoItem).join('\n')}
 ------------------------
-TOTAL: R$ ${total.toFixed(2)}
-Pagamento: ${pagamento.toUpperCase()}
+${(comandaAtual.tipoComanda || 'Cliente') === 'Cliente'
+  ? `TOTAL: R$ ${total.toFixed(2)}
+Pagamento: ${pagamento.toUpperCase()}`
+  : `VALOR DE VENDA (NÃO ENTRA NO CAIXA): R$ ${totalVendaComandaAtual.toFixed(2)}
+TOTAL A REPASSAR / CUSTO: R$ ${total.toFixed(2)}`}
 
 Obrigado e volte sempre!
 `
@@ -592,7 +603,7 @@ Obrigado e volte sempre!
     await addDoc(collection(db, 'historico'), {
       ...comandaAtual,
       pagamento,
-      total,
+      total: (comandaAtual.tipoComanda || 'Cliente') === 'Cliente' ? financeiro.totalVenda : financeiro.totalRepasse,
       totalVenda: financeiro.totalVenda,
       totalCusto: financeiro.totalCusto,
       totalRepasse: financeiro.totalRepasse,
@@ -1127,7 +1138,15 @@ MESTRE DO ESPETO PDV
             </div>
           ))}
 
-          <h2>Total: R$ {total.toFixed(2)}</h2>
+          {(comandaAtual.tipoComanda || 'Cliente') === 'Cliente' ? (
+            <h2>Total: R$ {total.toFixed(2)}</h2>
+          ) : (
+            <div style={styles.box}>
+              <h2>Total a repassar / custo: R$ {total.toFixed(2)}</h2>
+              <p>Valor de venda apenas para referência: R$ {totalVendaComandaAtual.toFixed(2)}</p>
+              <p>Este consumo não entra no faturamento de clientes.</p>
+            </div>
+          )}
 
           <select value={pagamento} onChange={e => setPagamento(e.target.value)} style={styles.input}>
             <option value="dinheiro">Dinheiro</option>
