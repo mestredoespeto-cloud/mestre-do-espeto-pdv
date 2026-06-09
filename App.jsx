@@ -140,6 +140,8 @@ export default function App() {
   const [historico, setHistorico] = useState([])
   const [comandaAtual, setComandaAtual] = useState(null)
   const [cliente, setCliente] = useState('')
+  const [tipoComanda, setTipoComanda] = useState('Cliente')
+  const [motivo, setMotivo] = useState('')
   const [atendente, setAtendente] = useState(localStorage.getItem('atendente_mestre') || '')
   const [pagamento, setPagamento] = useState('dinheiro')
   const [estoque, setEstoque] = useState(estoqueInicial)
@@ -234,6 +236,111 @@ export default function App() {
     await setDoc(doc(db, 'controle', 'estoque'), novoEstoque)
   }
 
+
+  const custoProduto = (nome) => {
+    const item = itensCardapio.find(i =>
+      i.nome === nome || (i.estoqueNome || i.nome) === nome
+    )
+
+    return Number(item?.precoCusto ?? custosPadrao[nome] ?? 0)
+  }
+
+  const itemEhEspeto = (nome, categoria = '') => {
+    const listaEspetos = [
+      ...(cardapio.Espetos || []),
+      ...(cardapio['Espetos Premium Avulso'] || [])
+    ]
+
+    return categoria.includes('Espetos') || listaEspetos.some(i => i.nome === nome)
+  }
+
+  const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
+    const tipo = comanda.tipoComanda || 'Cliente'
+    const nomePessoa = (comanda.cliente || '').trim()
+    const dataBase = hoje()
+
+    let totalVenda = 0
+    let totalCusto = 0
+    let totalRepasse = 0
+    let quantidadeEspetos = 0
+
+    const sociosMesmoDia = historicoBase.filter(h =>
+      (h.tipoComanda || 'Cliente') === 'Sócios' &&
+      (h.cliente || '').trim().toLowerCase() === nomePessoa.toLowerCase() &&
+      h.dataFechamento === dataBase
+    )
+
+    const espetosJaConsumidosSocio = sociosMesmoDia.reduce((acc, h) => {
+      return acc + Number(h.quantidadeEspetosInternos || 0)
+    }, 0)
+
+    let franquiaRestanteSocio = tipo === 'Sócios'
+      ? Math.max(0, 2 - espetosJaConsumidosSocio)
+      : 0
+
+    ;(comanda.itens || []).forEach(item => {
+      totalVenda += Number(item.preco || 0)
+
+      if (item.tipo === 'executivo') {
+        const listaEspetos = item.detalhesEspetos && item.detalhesEspetos.length
+          ? item.detalhesEspetos.map(e => e.nome)
+          : (item.espetosInclusos || [])
+
+        listaEspetos.forEach(nomeEspeto => {
+          const custo = custoProduto(nomeEspeto)
+          totalCusto += custo
+          quantidadeEspetos += 1
+
+          if (tipo === 'Sócios') {
+            if (franquiaRestanteSocio > 0) {
+              franquiaRestanteSocio -= 1
+            } else {
+              totalRepasse += custo
+            }
+          } else if (tipo === 'Família') {
+            totalRepasse += custo
+          }
+        })
+
+        return
+      }
+
+      const nomeEstoque = item.estoqueNome || item.nome
+      const custo = Number(item.precoCusto ?? custoProduto(nomeEstoque))
+      const ehEspeto = itemEhEspeto(nomeEstoque, item.categoria || '')
+
+      totalCusto += custo
+      if (ehEspeto) quantidadeEspetos += 1
+
+      if (tipo === 'Sócios') {
+        if (ehEspeto && franquiaRestanteSocio > 0) {
+          franquiaRestanteSocio -= 1
+        } else {
+          totalRepasse += custo
+        }
+      } else if (tipo === 'Família') {
+        totalRepasse += custo
+      }
+    })
+
+    if (tipo === 'Cliente') {
+      totalCusto = 0
+      totalRepasse = 0
+    }
+
+    if (tipo === 'Cortesia') {
+      totalRepasse = 0
+    }
+
+    return {
+      tipoComanda: tipo,
+      totalVenda,
+      totalCusto,
+      totalRepasse,
+      quantidadeEspetosInternos: quantidadeEspetos
+    }
+  }
+
   const criarComanda = async () => {
   if (!atendente.trim()) {
     alert('Digite o nome do atendente.')
@@ -248,6 +355,8 @@ export default function App() {
   try {
     const nova = {
       cliente: cliente.trim(),
+      tipoComanda,
+      motivo: motivo.trim(),
       atendente: atendente.trim(),
       itens: [],
       abertaEm: new Date().toISOString(),
@@ -270,6 +379,7 @@ export default function App() {
     ])
 
     setCliente('')
+    setMotivo('')
     tocarSom('/nova-comanda.mp3')
 
     alert('Comanda criada com sucesso!')
@@ -304,6 +414,7 @@ export default function App() {
     const itemVenda = {
       nome: item.nome,
       preco: item.preco,
+      precoCusto: Number(item.precoCusto ?? custoProduto(nomeEstoque)),
       categoria,
       tipo: item.premiumExecutivo ? 'premium-executivo' : 'normal',
       estoqueNome: nomeEstoque
@@ -339,6 +450,7 @@ export default function App() {
       {
         nome: espeto.nome,
         premium: !!espeto.premium,
+        precoCusto: custoProduto(espeto.nome),
         adicional: espeto.premium ? 10 : 0
       }
     ])
@@ -475,11 +587,16 @@ Obrigado e volte sempre!
     if (!comandaAtual.itens || comandaAtual.itens.length === 0) return alert('Comanda sem itens.')
 
     const dataFechamento = hoje()
+    const financeiro = calcularFinanceiroComanda(comandaAtual)
 
     await addDoc(collection(db, 'historico'), {
       ...comandaAtual,
       pagamento,
       total,
+      totalVenda: financeiro.totalVenda,
+      totalCusto: financeiro.totalCusto,
+      totalRepasse: financeiro.totalRepasse,
+      quantidadeEspetosInternos: financeiro.quantidadeEspetosInternos,
       dataFechamento,
       fechadoEm: new Date().toISOString(),
       criadoEm: serverTimestamp()
@@ -514,12 +631,49 @@ Obrigado e volte sempre!
     const categorias = {}
     const produtos = {}
     const caixaData = { dinheiro: 0, pix: 0, cartao: 0 }
+    const consumoInterno = {}
     let totalVendas = 0
+    let totalConsumoInterno = 0
+    let totalRepasseInterno = 0
     let totalItens = 0
 
     filtrado.forEach(c => {
-      totalVendas += c.total || 0
-      caixaData[c.pagamento] = (caixaData[c.pagamento] || 0) + (c.total || 0)
+      const tipo = c.tipoComanda || 'Cliente'
+      const valorVenda = Number(c.totalVenda ?? c.total ?? 0)
+      const valorCusto = Number(c.totalCusto || 0)
+      const valorRepasse = Number(c.totalRepasse || 0)
+
+      if (tipo === 'Cliente') {
+        totalVendas += valorVenda
+        caixaData[c.pagamento] = (caixaData[c.pagamento] || 0) + valorVenda
+      } else {
+        totalConsumoInterno += valorCusto
+        totalRepasseInterno += valorRepasse
+
+        if (!consumoInterno[tipo]) {
+          consumoInterno[tipo] = {
+            totalCusto: 0,
+            totalRepasse: 0,
+            comandas: {}
+          }
+        }
+
+        consumoInterno[tipo].totalCusto += valorCusto
+        consumoInterno[tipo].totalRepasse += valorRepasse
+
+        const nome = c.cliente || 'Sem nome'
+        if (!consumoInterno[tipo].comandas[nome]) {
+          consumoInterno[tipo].comandas[nome] = {
+            totalCusto: 0,
+            totalRepasse: 0,
+            quantidadeEspetos: 0
+          }
+        }
+
+        consumoInterno[tipo].comandas[nome].totalCusto += valorCusto
+        consumoInterno[tipo].comandas[nome].totalRepasse += valorRepasse
+        consumoInterno[tipo].comandas[nome].quantidadeEspetos += Number(c.quantidadeEspetosInternos || 0)
+      }
 
       ;(c.itens || []).forEach(item => {
         totalItens++
@@ -575,6 +729,9 @@ Obrigado e volte sempre!
       produtos,
       caixaData,
       totalVendas,
+      totalConsumoInterno,
+      totalRepasseInterno,
+      consumoInterno,
       totalItens,
       saidasEstoque,
       conferenciaEstoque,
@@ -588,6 +745,25 @@ Obrigado e volte sempre!
   const perdaEstimada = rel.conferenciaEstoque.reduce((acc, item) => acc + item.valorDiferenca, 0)
 
  const imprimirRelatorioData = () => {
+  const consumoInternoTexto = Object.keys(rel.consumoInterno || {}).length
+    ? Object.keys(rel.consumoInterno).map(tipo => {
+        const grupo = rel.consumoInterno[tipo]
+        const detalhes = Object.keys(grupo.comandas).map(nome => {
+          const c = grupo.comandas[nome]
+          return `${nome}
+  Espetos consumidos: ${c.quantidadeEspetos}
+  Custo consumo: R$ ${c.totalCusto.toFixed(2)}
+  A repassar: R$ ${c.totalRepasse.toFixed(2)}`
+        }).join('\n\n')
+
+        return `${tipo.toUpperCase()}
+${detalhes}
+
+Total custo ${tipo}: R$ ${grupo.totalCusto.toFixed(2)}
+Total a repassar ${tipo}: R$ ${grupo.totalRepasse.toFixed(2)}`
+      }).join('\n\n------------------------\n')
+    : 'Nenhum consumo interno registrado.'
+
   const texto = `
 FECHAMENTO DO DIA ${dataRelatorio}
 MESTRE DO ESPETO
@@ -618,9 +794,18 @@ Dinheiro: R$ ${rel.caixaData.dinheiro.toFixed(2)}
 Pix: R$ ${rel.caixaData.pix.toFixed(2)}
 Cartão: R$ ${rel.caixaData.cartao.toFixed(2)}
 
+Faturamento clientes: R$ ${rel.totalVendas.toFixed(2)}
+Consumo interno a custo: R$ ${rel.totalConsumoInterno.toFixed(2)}
+Total a repassar: R$ ${rel.totalRepasseInterno.toFixed(2)}
+
 Valor esperado: R$ ${rel.totalVendas.toFixed(2)}
 Valor registrado: R$ ${totalCaixaData.toFixed(2)}
 Diferença: R$ ${(totalCaixaData - rel.totalVendas).toFixed(2)}
+
+------------------------
+CONSUMO INTERNO / REPASSES
+
+${consumoInternoTexto}
 
 ------------------------
 CONSUMO REAL DE ESTOQUE
@@ -843,6 +1028,23 @@ MESTRE DO ESPETO PDV
       <div style={styles.card}>
         <h2>Nova Comanda</h2>
         <input placeholder="Nome / Mesa / Referência" value={cliente} onChange={e => setCliente(e.target.value)} style={styles.input} />
+
+        <select value={tipoComanda} onChange={e => setTipoComanda(e.target.value)} style={styles.input}>
+          <option value="Cliente">Cliente</option>
+          <option value="Sócios">Sócios</option>
+          <option value="Família">Família</option>
+          <option value="Cortesia">Cortesia</option>
+        </select>
+
+        {tipoComanda !== 'Cliente' && (
+          <input
+            placeholder="Motivo / observação opcional"
+            value={motivo}
+            onChange={e => setMotivo(e.target.value)}
+            style={styles.input}
+          />
+        )}
+
         <button onClick={criarComanda} style={styles.green}>➕ Criar Comanda</button>
       </div>
 
@@ -851,7 +1053,7 @@ MESTRE DO ESPETO PDV
         <input placeholder="Buscar comanda..." value={busca} onChange={e => setBusca(e.target.value)} style={styles.input} />
         {comandasFiltradas.map(c => (
           <button key={c.id} onClick={() => setComandaAtual(c)} style={styles.smallBtn}>
-            {c.cliente} — {(c.itens || []).length} itens
+            {c.tipoComanda || 'Cliente'} — {c.cliente} — {(c.itens || []).length} itens
           </button>
         ))}
       </div>
@@ -893,6 +1095,7 @@ MESTRE DO ESPETO PDV
       {comandaAtual && (
         <div style={styles.card}>
           <h2>Comanda: {comandaAtual.cliente}</h2>
+          <p>Tipo: {comandaAtual.tipoComanda || 'Cliente'} {comandaAtual.motivo ? `| Motivo: ${comandaAtual.motivo}` : ''}</p>
 
           {Object.keys(cardapio).map(cat => (
             <div key={cat}>
@@ -977,7 +1180,9 @@ MESTRE DO ESPETO PDV
         <p>Dinheiro: R$ {rel.caixaData.dinheiro.toFixed(2)}</p>
         <p>Pix: R$ {rel.caixaData.pix.toFixed(2)}</p>
         <p>Cartão: R$ {rel.caixaData.cartao.toFixed(2)}</p>
-        <h3>Valor esperado: R$ {rel.totalVendas.toFixed(2)}</h3>
+        <h3>Faturamento clientes: R$ {rel.totalVendas.toFixed(2)}</h3>
+        <h3>Consumo interno a custo: R$ {rel.totalConsumoInterno.toFixed(2)}</h3>
+        <h3>Total a repassar: R$ {rel.totalRepasseInterno.toFixed(2)}</h3>
         <h3 style={{ color: perdaEstimada > 0 ? '#ff3333' : '#00c853' }}>Perda estimada no estoque: R$ {perdaEstimada.toFixed(2)}</h3>
       </div>
 
