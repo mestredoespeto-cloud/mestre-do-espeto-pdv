@@ -1245,7 +1245,7 @@ MESTRE DO ESPETO PDV
         </div>
       )}
 
-     <div style={styles.card}>
+ <div style={styles.card}>
   <button
     onClick={() => setMostrarGestaoCardapio(!mostrarGestaoCardapio)}
     style={styles.yellow}
