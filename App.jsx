@@ -254,92 +254,100 @@ export default function App() {
     return categoria.includes('Espetos') || listaEspetos.some(i => i.nome === nome)
   }
 
-  const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
-    const tipo = comanda.tipoComanda || 'Cliente'
-    const nomePessoa = (comanda.cliente || '').trim()
-    const dataBase = hoje()
+const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
+  const tipo = comanda.tipoComanda || 'Cliente'
+  const nomePessoa = (comanda.cliente || '').trim()
+  const dataBase = hoje()
 
-    let totalVenda = 0
-    let totalCusto = 0
-    let totalRepasse = 0
-    let quantidadeEspetos = 0
+  let totalVenda = 0
+  let totalCusto = 0
+  let totalRepasse = 0
+  let quantidadeEspetosInternos = 0
 
-    const sociosMesmoDia = historicoBase.filter(h =>
-      (h.tipoComanda || 'Cliente') === 'Sócios' &&
-      (h.cliente || '').trim().toLowerCase() === nomePessoa.toLowerCase() &&
-      h.dataFechamento === dataBase
-    )
+  const sociosMesmoDia = historicoBase.filter(h =>
+    (h.tipoComanda || 'Cliente') === 'Sócios' &&
+    (h.cliente || '').trim().toLowerCase() === nomePessoa.toLowerCase() &&
+    h.dataFechamento === dataBase
+  )
 
-    const espetosJaConsumidosSocio = sociosMesmoDia.reduce((acc, h) => {
-      return acc + Number(h.quantidadeEspetosInternos || 0)
-    }, 0)
+  const espetosJaConsumidosSocio = sociosMesmoDia.reduce((acc, h) => {
+    return acc + Number(h.quantidadeEspetosInternos || 0)
+  }, 0)
 
-    let franquiaRestanteSocio = tipo === 'Sócios'
-      ? Math.max(0, 2 - espetosJaConsumidosSocio)
-      : 0
+  let franquiaRestanteSocio = tipo === 'Sócios'
+    ? Math.max(0, 2 - espetosJaConsumidosSocio)
+    : 0
 
-    ;(comanda.itens || []).forEach(item => {
-      totalVenda += Number(item.preco || 0)
+  ;(comanda.itens || []).forEach(item => {
+    totalVenda += Number(item.precoVenda ?? item.preco ?? 0)
 
-      if (item.tipo === 'executivo') {
-        const listaEspetos = item.detalhesEspetos && item.detalhesEspetos.length
-          ? item.detalhesEspetos.map(e => e.nome)
-          : (item.espetosInclusos || [])
+    if (item.tipo === 'executivo') {
+      const listaEspetos = item.detalhesEspetos && item.detalhesEspetos.length
+        ? item.detalhesEspetos.map(e => e.nome)
+        : (item.espetosInclusos || [])
 
-        listaEspetos.forEach(nomeEspeto => {
-          const custo = custoProduto(nomeEspeto)
-          totalCusto += custo
-          quantidadeEspetos += 1
+      listaEspetos.forEach(nomeEspeto => {
+        const custo = custoProduto(nomeEspeto)
+        totalCusto += custo
+        quantidadeEspetosInternos += 1
 
-          if (tipo === 'Sócios') {
-            if (franquiaRestanteSocio > 0) {
-              franquiaRestanteSocio -= 1
-            } else {
-              totalRepasse += custo
-            }
-          } else if (tipo === 'Família') {
+        if (tipo === 'Sócios') {
+          if (franquiaRestanteSocio > 0) {
+            franquiaRestanteSocio -= 1
+          } else {
             totalRepasse += custo
           }
-        })
+        }
 
-        return
-      }
-
-      const nomeEstoque = item.estoqueNome || item.nome
-      const custo = Number(item.precoCusto ?? custoProduto(nomeEstoque))
-      const ehEspeto = itemEhEspeto(nomeEstoque, item.categoria || '')
-
-      totalCusto += custo
-      if (ehEspeto) quantidadeEspetos += 1
-
-      if (tipo === 'Sócios') {
-        if (ehEspeto && franquiaRestanteSocio > 0) {
-          franquiaRestanteSocio -= 1
-        } else {
+        if (tipo === 'Família') {
           totalRepasse += custo
         }
-      } else if (tipo === 'Família') {
-        totalRepasse += custo
-      }
-    })
+      })
+
+      return
+    }
+
+    const nomeEstoque = item.estoqueNome || item.nome
+    const custo = custoProduto(nomeEstoque)
+    totalCusto += custo
+
+    const categoria = item.categoria || ''
+    const ehEspeto = categoria.includes('Espeto')
+
+    if (ehEspeto) {
+      quantidadeEspetosInternos += 1
+    }
 
     if (tipo === 'Cliente') {
-      totalCusto = 0
-      totalRepasse = 0
+      return
     }
 
     if (tipo === 'Cortesia') {
-      totalRepasse = 0
+      return
     }
 
-    return {
-      tipoComanda: tipo,
-      totalVenda,
-      totalCusto,
-      totalRepasse,
-      quantidadeEspetosInternos: quantidadeEspetos
+    if (tipo === 'Família') {
+      totalRepasse += custo
+      return
     }
+
+    if (tipo === 'Sócios') {
+      if (ehEspeto && franquiaRestanteSocio > 0) {
+        franquiaRestanteSocio -= 1
+        return
+      }
+
+      totalRepasse += custo
+    }
+  })
+
+  return {
+    totalVenda,
+    totalCusto,
+    totalRepasse,
+    quantidadeEspetosInternos
   }
+}
 
   const criarComanda = async () => {
   if (!atendente.trim()) {
