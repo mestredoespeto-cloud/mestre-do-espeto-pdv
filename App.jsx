@@ -1256,32 +1256,34 @@ MESTRE DO ESPETO PDV
   {mostrarGestaoCardapio && (
     <>
       <h2>⚙️ Gestão do Cardápio</h2>
-      <button onClick={adicionarItemCardapio} style={styles.green}>➕ Adicionar Item ao Cardápio</button>
 
-        {Object.keys(cardapio).map(cat => (
-          <div key={cat} style={styles.box}>
-            <h3>{cat}</h3>
-            {cardapio[cat].map(item => (
-              <div key={item.id || item.nome} style={styles.itemLinha}>
-                <span>
-                  <strong>{item.nome}</strong><br />
-                  Venda: R$ {Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)} | Custo: R$ {Number(item.precoCusto ?? 0).toFixed(2)}
-                </span>
-                <span>
-                  <button onClick={() => editarItemCardapio(item)} style={styles.repor}>Editar</button>
-                  <button onClick={() => alternarAtivoItemCardapio(item)} style={styles.repor}>Desativar</button>
-                  <button onClick={() => excluirItemCardapio(item)} style={styles.repor}>Excluir</button>
-                </span>
-              </div>
-            ))}
-          </div>
+      <button onClick={adicionarItemCardapio} style={styles.green}>
+        ➕ Adicionar Item ao Cardápio
+      </button>
 
-          </>
-        ))}
-      </div>
+      {Object.keys(cardapio).map(cat => (
+        <div key={cat} style={styles.box}>
+          <h3>{cat}</h3>
 
-      <div style={styles.card}>
-        <h2>Relatório por Data</h2>
+          {cardapio[cat].map(item => (
+            <div key={item.id || item.nome} style={styles.itemLinha}>
+              <span>
+                <strong>{item.nome}</strong><br />
+                Venda: R$ {Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)} | Custo: R$ {Number(item.precoCusto ?? 0).toFixed(2)}
+              </span>
+
+              <span>
+                <button onClick={() => editarItemCardapio(item)} style={styles.repor}>Editar</button>
+                <button onClick={() => alternarAtivoItemCardapio(item)} style={styles.repor}>Desativar</button>
+                <button onClick={() => excluirItemCardapio(item)} style={styles.repor}>Excluir</button>
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
+  )}
+</div>
         <input type="date" value={dataRelatorio} onChange={e => setDataRelatorio(e.target.value)} style={styles.input} />
         <button onClick={registrarEstoqueInicialDia} style={styles.yellow}>📌 Registrar Estoque Inicial do Dia</button>
         <button onClick={imprimirRelatorioData} style={styles.green}>🧾 Imprimir Fechamento Detalhado</button>
