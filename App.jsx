@@ -15,8 +15,6 @@ import {
   where
 } from 'firebase/firestore'
 
-const SENHA_ADMIN = '365608'
-
 const cardapioPadrao = {
   Espetos: [
     { nome: 'Carne Bovina', preco: 10 },
@@ -157,42 +155,9 @@ export default function App() {
 
   const [mostrarGestaoCardapio, setMostrarGestaoCardapio] = useState(false)
   const [mostrarEstoque, setMostrarEstoque] = useState(false)
-  const [usuarioAtivo, setUsuarioAtivo] = useState(sessionStorage.getItem('usuario_mestre') || '')
-  const [nomeLogin, setNomeLogin] = useState('')
+  const [usuarioEntrou, setUsuarioEntrou] = useState(false)
   const [adminLiberado, setAdminLiberado] = useState(false)
-
-  const entrarSistema = () => {
-    const nome = nomeLogin.trim()
-    if (nome.length < 3) return alert('Digite um nome com pelo menos 3 caracteres.')
-
-    sessionStorage.setItem('usuario_mestre', nome)
-    setUsuarioAtivo(nome)
-    setAtendente(nome)
-    setNomeLogin('')
-  }
-
-  const trocarAtendente = () => {
-    sessionStorage.removeItem('usuario_mestre')
-    setUsuarioAtivo('')
-    setAtendente('')
-    setAdminLiberado(false)
-    setComandaAtual(null)
-  }
-
-  const liberarAdministracao = () => {
-    const senha = prompt('Digite a senha administrativa:')
-    if (senha === null) return
-    if (senha !== SENHA_ADMIN) return alert('Senha administrativa incorreta.')
-
-    setAdminLiberado(true)
-    alert('Área administrativa liberada.')
-  }
-
-  const bloquearAdministracao = () => {
-    setAdminLiberado(false)
-    setMostrarGestaoCardapio(false)
-    setMostrarEstoque(false)
-  }
+  const [nomeEntrada, setNomeEntrada] = useState('')
 
   useEffect(() => {
     setTimeout(() => setLoading(false), 1000)
@@ -201,10 +166,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('atendente_mestre', atendente)
   }, [atendente])
-
-  useEffect(() => {
-    if (usuarioAtivo) setAtendente(usuarioAtivo)
-  }, [usuarioAtivo])
 
   useEffect(() => {
     const unsubComandas = onSnapshot(collection(db, 'comandas'), snapshot => {
@@ -272,6 +233,44 @@ export default function App() {
 
     return () => unsubCardapio()
   }, [])
+
+  const entrarNoSistema = () => {
+    const nome = nomeEntrada.trim()
+
+    if (nome.length < 3) {
+      return alert('Digite seu nome com pelo menos 3 caracteres.')
+    }
+
+    setAtendente(nome)
+    localStorage.setItem('atendente_mestre', nome)
+    setUsuarioEntrou(true)
+  }
+
+  const trocarAtendente = () => {
+    setAdminLiberado(false)
+    setUsuarioEntrou(false)
+    setComandaAtual(null)
+    setNomeEntrada('')
+    setAtendente('')
+    localStorage.removeItem('atendente_mestre')
+  }
+
+  const liberarAdministrador = () => {
+    const senha = prompt('Digite a senha do administrador:')
+
+    if (senha === '365608') {
+      setAdminLiberado(true)
+      alert('Área administrativa liberada.')
+    } else if (senha !== null) {
+      alert('Senha incorreta.')
+    }
+  }
+
+  const bloquearAdministrador = () => {
+    setAdminLiberado(false)
+    setMostrarGestaoCardapio(false)
+    setMostrarEstoque(false)
+  }
 
   const tocarSom = (arquivo) => {
     try { new Audio(arquivo).play() } catch (e) {}
@@ -406,9 +405,11 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
   }
 
   try {
+    const tipoComandaSalvo = adminLiberado ? tipoComanda : 'Cliente'
+
     const nova = {
       cliente: cliente.trim(),
-      tipoComanda: adminLiberado ? tipoComanda : 'Cliente',
+      tipoComanda: tipoComandaSalvo,
       motivo: adminLiberado ? motivo.trim() : '',
       atendente: atendente.trim(),
       itens: [],
@@ -671,7 +672,6 @@ Obrigado e volte sempre!
 }
 
 const excluirComandaAberta = async () => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
   if (!comandaAtual) return alert('Selecione uma comanda para excluir.')
 
   const confirmar = confirm(
@@ -933,7 +933,6 @@ MESTRE DO ESPETO PDV
 }
 
   const registrarEstoqueInicialDia = async () => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const confirmar = confirm(`Registrar o estoque atual como estoque inicial do dia ${dataRelatorio}?`)
     if (!confirmar) return
 
@@ -942,7 +941,6 @@ MESTRE DO ESPETO PDV
   }
 
   const limparDiaSelecionado = async () => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
   const confirmar = confirm(`Deseja apagar TODAS as comandas abertas e fechadas do dia ${dataRelatorio}?`)
   if (!confirmar) return
 
@@ -981,21 +979,18 @@ MESTRE DO ESPETO PDV
   }
 }
   const reporEstoque = async (produto) => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const qtd = Number(prompt(`Quantidade para repor ${produto}:`))
     if (!qtd || qtd <= 0) return
     await salvarEstoque({ ...estoque, [produto]: (estoque[produto] || 0) + qtd })
   }
 
   const definirEstoque = async (produto) => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const qtd = Number(prompt(`Digite o estoque EXATO de ${produto}:`))
     if (qtd < 0 || Number.isNaN(qtd)) return
     await salvarEstoque({ ...estoque, [produto]: qtd })
   }
 
   const adicionarItemCardapio = async () => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const nome = prompt('Nome do item:')
     if (!nome || !nome.trim()) return
 
@@ -1040,7 +1035,6 @@ MESTRE DO ESPETO PDV
   }
 
   const editarItemCardapio = async (item) => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
 
     const novoNome = prompt('Nome do item:', item.nome)
@@ -1077,7 +1071,6 @@ MESTRE DO ESPETO PDV
   }
 
   const alternarAtivoItemCardapio = async (item) => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
 
     await updateDoc(doc(db, 'cardapio', item.id), {
@@ -1086,7 +1079,6 @@ MESTRE DO ESPETO PDV
   }
 
   const excluirItemCardapio = async (item) => {
-  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
 
     const confirmar = confirm(`Deseja excluir ${item.nome} do cardápio?`)
@@ -1105,32 +1097,39 @@ MESTRE DO ESPETO PDV
     ...cardapio['Espetos Premium Avulso'].map(e => ({ ...e, premium: true }))
   ]
 
-  if (!usuarioAtivo) {
-    return (
-      <div style={styles.splash}>
-        <img src="/logo.png" alt="Mestre do Espeto" style={styles.logoSplash} />
-        <h1>MESTRE DO ESPETO</h1>
-        <p>Digite seu nome para iniciar o atendimento.</p>
-        <input
-          placeholder="Nome do atendente"
-          value={nomeLogin}
-          onChange={e => setNomeLogin(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && entrarSistema()}
-          style={{ ...styles.input, maxWidth: 360 }}
-        />
-        <button onClick={entrarSistema} style={{ ...styles.green, maxWidth: 360 }}>
-          Entrar no sistema
-        </button>
-      </div>
-    )
-  }
-
   if (loading) {
     return (
       <div style={styles.splash}>
         <img src="/logo.png" alt="Mestre do Espeto" style={styles.logoSplash} />
         <h1>MESTRE DO ESPETO</h1>
         <p>Carregando sistema...</p>
+      </div>
+    )
+  }
+
+  if (!usuarioEntrou) {
+    return (
+      <div style={styles.loginPage}>
+        <div style={styles.loginCard}>
+          <img src="/logo.png" alt="Mestre do Espeto" style={styles.logoSplash} />
+          <h1 style={styles.title}>MESTRE DO ESPETO PRO</h1>
+          <p>Digite seu nome para iniciar o atendimento.</p>
+
+          <input
+            autoFocus
+            placeholder="Nome do atendente"
+            value={nomeEntrada}
+            onChange={e => setNomeEntrada(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') entrarNoSistema()
+            }}
+            style={styles.input}
+          />
+
+          <button onClick={entrarNoSistema} style={styles.green}>
+            Entrar no sistema
+          </button>
+        </div>
       </div>
     )
   }
@@ -1144,17 +1143,31 @@ MESTRE DO ESPETO PDV
       </div>
 
       <div style={styles.card}>
-        <h2>👤 Atendente: {usuarioAtivo}</h2>
-        <button onClick={trocarAtendente} style={styles.smallBtn}>Trocar atendente</button>
+        <div style={styles.topBar}>
+          <div>
+            <strong>Atendente atual</strong>
+            <div style={styles.atendenteNome}>👤 {atendente}</div>
+            <div style={{ marginTop: 5 }}>
+              Modo: {adminLiberado ? 'Administrador' : 'Atendimento'}
+            </div>
+          </div>
 
-        {!adminLiberado ? (
-          <button onClick={liberarAdministracao} style={styles.yellow}>🔐 Acesso Administrativo</button>
-        ) : (
-          <>
-            <p style={{ color: '#00c853', fontWeight: 'bold' }}>👑 Administração liberada</p>
-            <button onClick={bloquearAdministracao} style={styles.red}>🔒 Bloquear Administração</button>
-          </>
-        )}
+          <div style={styles.topActions}>
+            <button onClick={trocarAtendente} style={styles.smallBtn}>
+              🚪 Trocar atendente
+            </button>
+
+            {!adminLiberado ? (
+              <button onClick={liberarAdministrador} style={styles.yellowSmall}>
+                🔐 Administração
+              </button>
+            ) : (
+              <button onClick={bloquearAdministrador} style={styles.redSmall}>
+                🔒 Sair da administração
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div style={styles.card}>
@@ -1180,7 +1193,7 @@ MESTRE DO ESPETO PDV
             )}
           </>
         ) : (
-          <p>Tipo de comanda: <strong>Cliente</strong></p>
+          <p style={styles.operacionalInfo}>Tipo de comanda: Cliente</p>
         )}
 
         <button onClick={criarComanda} style={styles.green}>➕ Criar Comanda</button>
@@ -1265,7 +1278,7 @@ MESTRE DO ESPETO PDV
       <span>
         {item.nome} — R$ {Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)}
 
-        {tipoAtual !== 'Cliente' && (
+        {adminLiberado && tipoAtual !== 'Cliente' && (
           <small>
             <br />
             Custo: R$ {custoItem.toFixed(2)}
@@ -1334,7 +1347,6 @@ MESTRE DO ESPETO PDV
       )}
 
  {adminLiberado && (
-    <>
  <div style={styles.card}>
   <button
     onClick={() => setMostrarGestaoCardapio(!mostrarGestaoCardapio)}
@@ -1374,11 +1386,9 @@ MESTRE DO ESPETO PDV
     </>
   )}
 </div>
-    </>
-  )}
+ )}
 
 {adminLiberado && (
-  <>
 <div style={styles.card}>
   <h2>Relatório por Data</h2>
   <input 
@@ -1394,7 +1404,9 @@ MESTRE DO ESPETO PDV
         <button onClick={imprimirRelatorioData} style={styles.green}>🧾 Imprimir Fechamento Detalhado</button>
         <button onClick={limparDiaSelecionado} style={styles.red}>🧹 Limpar Testes do Dia</button>
       </div>
+)}
 
+{adminLiberado && (
       <div style={styles.card}>
         <h2>Resumo da Data: {dataRelatorio}</h2>
         <p>Comandas fechadas: {rel.comandas.length}</p>
@@ -1407,7 +1419,9 @@ MESTRE DO ESPETO PDV
         <h3>Total a repassar: R$ {rel.totalRepasseInterno.toFixed(2)}</h3>
         <h3 style={{ color: perdaEstimada > 0 ? '#ff3333' : '#00c853' }}>Perda estimada no estoque: R$ {perdaEstimada.toFixed(2)}</h3>
       </div>
+)}
 
+{adminLiberado && (
 <div style={styles.card}>
   <button
     onClick={() => setMostrarEstoque(!mostrarEstoque)}
@@ -1451,9 +1465,8 @@ MESTRE DO ESPETO PDV
     </>
   )}
 </div>
-
-  </>
 )}
+
     </div>
   )
 }
@@ -1479,5 +1492,13 @@ const styles = {
   selectedBtn: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 6, textAlign: 'center', fontWeight: 'bold' },
   smallBtn: { padding: 10, background: '#444', color: '#fff', border: 'none', borderRadius: 8, margin: 4 },
   itemLinha: { display: 'flex', justifyContent: 'space-between', marginBottom: 6, borderBottom: '1px solid #444', paddingBottom: 4 },
-  repor: { marginLeft: 10, padding: 5 }
+  repor: { marginLeft: 10, padding: 5 },
+  loginPage: { background: '#111', color: '#fff', minHeight: '100vh', padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial' },
+  loginCard: { width: '100%', maxWidth: 420, background: '#222', padding: 25, borderRadius: 16, textAlign: 'center' },
+  topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 15, flexWrap: 'wrap' },
+  topActions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  atendenteNome: { fontSize: 22, fontWeight: 'bold', marginTop: 5 },
+  yellowSmall: { padding: 10, background: '#ffb300', color: '#111', border: 'none', borderRadius: 8, fontWeight: 'bold' },
+  redSmall: { padding: 10, background: '#d50000', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 'bold' },
+  operacionalInfo: { background: '#111', padding: 12, borderRadius: 8, marginBottom: 10 }
 }
