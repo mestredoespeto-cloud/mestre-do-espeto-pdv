@@ -15,6 +15,8 @@ import {
   where
 } from 'firebase/firestore'
 
+const SENHA_ADMIN = '365608'
+
 const cardapioPadrao = {
   Espetos: [
     { nome: 'Carne Bovina', preco: 10 },
@@ -155,6 +157,42 @@ export default function App() {
 
   const [mostrarGestaoCardapio, setMostrarGestaoCardapio] = useState(false)
   const [mostrarEstoque, setMostrarEstoque] = useState(false)
+  const [usuarioAtivo, setUsuarioAtivo] = useState(sessionStorage.getItem('usuario_mestre') || '')
+  const [nomeLogin, setNomeLogin] = useState('')
+  const [adminLiberado, setAdminLiberado] = useState(false)
+
+  const entrarSistema = () => {
+    const nome = nomeLogin.trim()
+    if (nome.length < 3) return alert('Digite um nome com pelo menos 3 caracteres.')
+
+    sessionStorage.setItem('usuario_mestre', nome)
+    setUsuarioAtivo(nome)
+    setAtendente(nome)
+    setNomeLogin('')
+  }
+
+  const trocarAtendente = () => {
+    sessionStorage.removeItem('usuario_mestre')
+    setUsuarioAtivo('')
+    setAtendente('')
+    setAdminLiberado(false)
+    setComandaAtual(null)
+  }
+
+  const liberarAdministracao = () => {
+    const senha = prompt('Digite a senha administrativa:')
+    if (senha === null) return
+    if (senha !== SENHA_ADMIN) return alert('Senha administrativa incorreta.')
+
+    setAdminLiberado(true)
+    alert('Área administrativa liberada.')
+  }
+
+  const bloquearAdministracao = () => {
+    setAdminLiberado(false)
+    setMostrarGestaoCardapio(false)
+    setMostrarEstoque(false)
+  }
 
   useEffect(() => {
     setTimeout(() => setLoading(false), 1000)
@@ -163,6 +201,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('atendente_mestre', atendente)
   }, [atendente])
+
+  useEffect(() => {
+    if (usuarioAtivo) setAtendente(usuarioAtivo)
+  }, [usuarioAtivo])
 
   useEffect(() => {
     const unsubComandas = onSnapshot(collection(db, 'comandas'), snapshot => {
@@ -366,8 +408,8 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
   try {
     const nova = {
       cliente: cliente.trim(),
-      tipoComanda,
-      motivo: motivo.trim(),
+      tipoComanda: adminLiberado ? tipoComanda : 'Cliente',
+      motivo: adminLiberado ? motivo.trim() : '',
       atendente: atendente.trim(),
       itens: [],
       abertaEm: new Date().toISOString(),
@@ -629,6 +671,7 @@ Obrigado e volte sempre!
 }
 
 const excluirComandaAberta = async () => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
   if (!comandaAtual) return alert('Selecione uma comanda para excluir.')
 
   const confirmar = confirm(
@@ -890,6 +933,7 @@ MESTRE DO ESPETO PDV
 }
 
   const registrarEstoqueInicialDia = async () => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const confirmar = confirm(`Registrar o estoque atual como estoque inicial do dia ${dataRelatorio}?`)
     if (!confirmar) return
 
@@ -898,6 +942,7 @@ MESTRE DO ESPETO PDV
   }
 
   const limparDiaSelecionado = async () => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
   const confirmar = confirm(`Deseja apagar TODAS as comandas abertas e fechadas do dia ${dataRelatorio}?`)
   if (!confirmar) return
 
@@ -936,18 +981,21 @@ MESTRE DO ESPETO PDV
   }
 }
   const reporEstoque = async (produto) => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const qtd = Number(prompt(`Quantidade para repor ${produto}:`))
     if (!qtd || qtd <= 0) return
     await salvarEstoque({ ...estoque, [produto]: (estoque[produto] || 0) + qtd })
   }
 
   const definirEstoque = async (produto) => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const qtd = Number(prompt(`Digite o estoque EXATO de ${produto}:`))
     if (qtd < 0 || Number.isNaN(qtd)) return
     await salvarEstoque({ ...estoque, [produto]: qtd })
   }
 
   const adicionarItemCardapio = async () => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     const nome = prompt('Nome do item:')
     if (!nome || !nome.trim()) return
 
@@ -992,6 +1040,7 @@ MESTRE DO ESPETO PDV
   }
 
   const editarItemCardapio = async (item) => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
 
     const novoNome = prompt('Nome do item:', item.nome)
@@ -1028,6 +1077,7 @@ MESTRE DO ESPETO PDV
   }
 
   const alternarAtivoItemCardapio = async (item) => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
 
     await updateDoc(doc(db, 'cardapio', item.id), {
@@ -1036,6 +1086,7 @@ MESTRE DO ESPETO PDV
   }
 
   const excluirItemCardapio = async (item) => {
+  if (!adminLiberado) return alert('Acesso restrito ao administrador.')
     if (!item.id) return alert('Esse item ainda não tem ID no Firebase. Atualize a página e tente novamente.')
 
     const confirmar = confirm(`Deseja excluir ${item.nome} do cardápio?`)
@@ -1053,6 +1104,26 @@ MESTRE DO ESPETO PDV
     ...cardapio.Espetos.map(e => ({ ...e, premium: false })),
     ...cardapio['Espetos Premium Avulso'].map(e => ({ ...e, premium: true }))
   ]
+
+  if (!usuarioAtivo) {
+    return (
+      <div style={styles.splash}>
+        <img src="/logo.png" alt="Mestre do Espeto" style={styles.logoSplash} />
+        <h1>MESTRE DO ESPETO</h1>
+        <p>Digite seu nome para iniciar o atendimento.</p>
+        <input
+          placeholder="Nome do atendente"
+          value={nomeLogin}
+          onChange={e => setNomeLogin(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && entrarSistema()}
+          style={{ ...styles.input, maxWidth: 360 }}
+        />
+        <button onClick={entrarSistema} style={{ ...styles.green, maxWidth: 360 }}>
+          Entrar no sistema
+        </button>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -1073,28 +1144,43 @@ MESTRE DO ESPETO PDV
       </div>
 
       <div style={styles.card}>
-        <h2>Atendente</h2>
-        <input placeholder="Nome do atendente" value={atendente} onChange={e => setAtendente(e.target.value)} style={styles.input} />
+        <h2>👤 Atendente: {usuarioAtivo}</h2>
+        <button onClick={trocarAtendente} style={styles.smallBtn}>Trocar atendente</button>
+
+        {!adminLiberado ? (
+          <button onClick={liberarAdministracao} style={styles.yellow}>🔐 Acesso Administrativo</button>
+        ) : (
+          <>
+            <p style={{ color: '#00c853', fontWeight: 'bold' }}>👑 Administração liberada</p>
+            <button onClick={bloquearAdministracao} style={styles.red}>🔒 Bloquear Administração</button>
+          </>
+        )}
       </div>
 
       <div style={styles.card}>
         <h2>Nova Comanda</h2>
         <input placeholder="Nome / Mesa / Referência" value={cliente} onChange={e => setCliente(e.target.value)} style={styles.input} />
 
-        <select value={tipoComanda} onChange={e => setTipoComanda(e.target.value)} style={styles.input}>
-          <option value="Cliente">Cliente</option>
-          <option value="Sócios">Sócios</option>
-          <option value="Família">Família</option>
-          <option value="Cortesia">Cortesia</option>
-        </select>
+        {adminLiberado ? (
+          <>
+            <select value={tipoComanda} onChange={e => setTipoComanda(e.target.value)} style={styles.input}>
+              <option value="Cliente">Cliente</option>
+              <option value="Sócios">Sócios</option>
+              <option value="Família">Família</option>
+              <option value="Cortesia">Cortesia</option>
+            </select>
 
-        {tipoComanda !== 'Cliente' && (
-          <input
-            placeholder="Motivo / observação opcional"
-            value={motivo}
-            onChange={e => setMotivo(e.target.value)}
-            style={styles.input}
-          />
+            {tipoComanda !== 'Cliente' && (
+              <input
+                placeholder="Motivo / observação opcional"
+                value={motivo}
+                onChange={e => setMotivo(e.target.value)}
+                style={styles.input}
+              />
+            )}
+          </>
+        ) : (
+          <p>Tipo de comanda: <strong>Cliente</strong></p>
         )}
 
         <button onClick={criarComanda} style={styles.green}>➕ Criar Comanda</button>
@@ -1223,21 +1309,23 @@ MESTRE DO ESPETO PDV
   🖨️ Imprimir Comanda Cliente
 </button>
 
-<button
-  onClick={excluirComandaAberta}
-  style={{
-    background: '#dc2626',
-    color: '#fff',
-    width: '100%',
-    padding: '12px',
-    borderRadius: '8px',
-    marginBottom: '10px',
-    border: 'none',
-    cursor: 'pointer'
-  }}
->
-  🗑️ Excluir Comanda Aberta
-</button>
+{adminLiberado && (
+  <button
+    onClick={excluirComandaAberta}
+    style={{
+      background: '#dc2626',
+      color: '#fff',
+      width: '100%',
+      padding: '12px',
+      borderRadius: '8px',
+      marginBottom: '10px',
+      border: 'none',
+      cursor: 'pointer'
+    }}
+  >
+    🗑️ Excluir Comanda Aberta
+  </button>
+)}
 
 <button onClick={fecharComanda} style={styles.red}>
   💰 Fechar Comanda
@@ -1245,6 +1333,8 @@ MESTRE DO ESPETO PDV
         </div>
       )}
 
+ {adminLiberado && (
+    <>
  <div style={styles.card}>
   <button
     onClick={() => setMostrarGestaoCardapio(!mostrarGestaoCardapio)}
@@ -1284,7 +1374,11 @@ MESTRE DO ESPETO PDV
     </>
   )}
 </div>
+    </>
+  )}
 
+{adminLiberado && (
+  <>
 <div style={styles.card}>
   <h2>Relatório por Data</h2>
   <input 
@@ -1314,7 +1408,7 @@ MESTRE DO ESPETO PDV
         <h3 style={{ color: perdaEstimada > 0 ? '#ff3333' : '#00c853' }}>Perda estimada no estoque: R$ {perdaEstimada.toFixed(2)}</h3>
       </div>
 
-      <div style={styles.card}>
+<div style={styles.card}>
   <button
     onClick={() => setMostrarEstoque(!mostrarEstoque)}
     style={styles.yellow}
@@ -1322,43 +1416,43 @@ MESTRE DO ESPETO PDV
     📦 {mostrarEstoque ? 'Ocultar Estoque' : 'Abrir Estoque'}
   </button>
 
- {mostrarEstoque && (
-  <>
-    <h2>Conferência de Estoque</h2>
+  {mostrarEstoque && (
+    <>
+      <h2>Conferência de Estoque</h2>
 
-    {rel.conferenciaEstoque.map(i => (
-      <div key={i.produto} style={styles.box}>
-        <strong>{i.produto}</strong>
+      {rel.conferenciaEstoque.map(i => (
+        <div key={i.produto} style={styles.box}>
+          <strong>{i.produto}</strong>
 
-        <p>
-          Inicial: {i.inicial} |
-          Saída: {i.saida} |
-          Esperado: {i.esperado} |
-          Real: {i.real}
+          <p>
+            Inicial: {i.inicial} |
+            Saída: {i.saida} |
+            Esperado: {i.esperado} |
+            Real: {i.real}
+          </p>
+
+          <p>
+            Diferença: {i.diferenca} |
+            Perda estimada: R$ {i.valorDiferenca.toFixed(2)}
+          </p>
+        </div>
+      ))}
+
+      <h2>Estoque em Tempo Real</h2>
+
+      {Object.keys(estoque).map(prod => (
+        <p key={prod}>
+          {prod}: {estoque[prod]} un.
+          {estoque[prod] <= 5 && <b style={{ color: 'red' }}> ⚠️ baixo</b>}
+          <button onClick={() => reporEstoque(prod)} style={styles.repor}>Repor</button>
+          <button onClick={() => definirEstoque(prod)} style={styles.repor}>Ajustar</button>
         </p>
-
-        <p>
-          Diferença: {i.diferenca} |
-          Perda estimada: R$ {i.valorDiferenca.toFixed(2)}
-        </p>
-      </div>
-    ))}
-  </>
-)}
+      ))}
+    </>
+  )}
 </div>
 
-{mostrarEstoque && (
-  <div style={styles.card}>
-    <h2>Estoque em Tempo Real</h2>
-        {Object.keys(estoque).map(prod => (
-          <p key={prod}>
-            {prod}: {estoque[prod]} un.
-            {estoque[prod] <= 5 && <b style={{ color: 'red' }}> ⚠️ baixo</b>}
-            <button onClick={() => reporEstoque(prod)} style={styles.repor}>Repor</button>
-            <button onClick={() => definirEstoque(prod)} style={styles.repor}>Ajustar</button>
-          </p>
-        ))}
-      </div>
+  </>
 )}
     </div>
   )
