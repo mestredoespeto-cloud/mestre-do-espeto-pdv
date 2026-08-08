@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { db } from './firebase'
 import LoginScreen from './components/LoginScreen'
 import HeaderBar from './components/HeaderBar'
+import PainelCardapioComanda from './components/PainelCardapioComanda'
 import styles from './styles/styles'
 
 import {
@@ -1208,24 +1209,12 @@ MESTRE DO ESPETO PDV
           <h2>Comanda: {comandaAtual.cliente}</h2>
           <p>Tipo: {comandaAtual.tipoComanda || 'Cliente'} {comandaAtual.motivo ? `| Motivo: ${comandaAtual.motivo}` : ''}</p>
 
-          {Object.keys(cardapio).map(cat => (
-            <div key={cat}>
-              <h3>{cat}</h3>
-              <div style={styles.grid}>
-                {cardapio[cat].map(item => (
-                  <button
-                    key={item.nome}
-                    onClick={() => cat === 'Executivos' ? abrirSelecaoExecutivo(item) : adicionarItem(item, cat)}
-                    style={cat === 'Executivos' ? styles.execBtn : styles.itemBtn}
-                  >
-                    <strong>{item.nome}</strong>
-                    <br />
-                    R$ {item.preco.toFixed(2)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+          <PainelCardapioComanda
+            cardapio={cardapio}
+            estoque={estoque}
+            adicionarItem={adicionarItem}
+            abrirSelecaoExecutivo={abrirSelecaoExecutivo}
+          />
 
           <h2>Itens</h2>
           {(comandaAtual.itens || []).map((item, index) => {
