@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { db } from './firebase'
+import LoginScreen from './components/LoginScreen'
+import HeaderBar from './components/HeaderBar'
+import styles from './styles/styles'
 
 import {
   collection,
@@ -1109,66 +1112,23 @@ MESTRE DO ESPETO PDV
 
   if (!usuarioEntrou) {
     return (
-      <div style={styles.loginPage}>
-        <div style={styles.loginCard}>
-          <img src="/logo.png" alt="Mestre do Espeto" style={styles.logoSplash} />
-          <h1 style={styles.title}>MESTRE DO ESPETO PRO</h1>
-          <p>Digite seu nome para iniciar o atendimento.</p>
-
-          <input
-            autoFocus
-            placeholder="Nome do atendente"
-            value={nomeEntrada}
-            onChange={e => setNomeEntrada(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') entrarNoSistema()
-            }}
-            style={styles.input}
-          />
-
-          <button onClick={entrarNoSistema} style={styles.green}>
-            Entrar no sistema
-          </button>
-        </div>
-      </div>
+      <LoginScreen
+        nomeEntrada={nomeEntrada}
+        setNomeEntrada={setNomeEntrada}
+        entrarNoSistema={entrarNoSistema}
+      />
     )
   }
 
   return (
     <div style={styles.app}>
-      <div style={styles.logoBox}>
-        <img src="/logo.png" alt="Mestre do Espeto" style={styles.logo} />
-        <h1 style={styles.title}>MESTRE DO ESPETO — PDV ONLINE</h1>
-        <p style={{ color: '#00c853' }}>🟢 Sincronizado em tempo real</p>
-      </div>
-
-      <div style={styles.card}>
-        <div style={styles.topBar}>
-          <div>
-            <strong>Atendente atual</strong>
-            <div style={styles.atendenteNome}>👤 {atendente}</div>
-            <div style={{ marginTop: 5 }}>
-              Modo: {adminLiberado ? 'Administrador' : 'Atendimento'}
-            </div>
-          </div>
-
-          <div style={styles.topActions}>
-            <button onClick={trocarAtendente} style={styles.smallBtn}>
-              🚪 Trocar atendente
-            </button>
-
-            {!adminLiberado ? (
-              <button onClick={liberarAdministrador} style={styles.yellowSmall}>
-                🔐 Administração
-              </button>
-            ) : (
-              <button onClick={bloquearAdministrador} style={styles.redSmall}>
-                🔒 Sair da administração
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <HeaderBar
+        atendente={atendente}
+        adminLiberado={adminLiberado}
+        trocarAtendente={trocarAtendente}
+        liberarAdministrador={liberarAdministrador}
+        bloquearAdministrador={bloquearAdministrador}
+      />
 
       <div style={styles.card}>
         <h2>Nova Comanda</h2>
@@ -1469,36 +1429,4 @@ MESTRE DO ESPETO PDV
 
     </div>
   )
-}
-
-const styles = {
-  splash: { background: '#000', color: '#fff', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'Arial' },
-  logoSplash: { width: 180, marginBottom: 15 },
-  app: { background: '#111', color: '#fff', minHeight: '100vh', padding: 15, fontFamily: 'Arial' },
-  logoBox: { textAlign: 'center' },
-  logo: { maxWidth: 150, marginBottom: 10 },
-  title: { color: '#ff3333' },
-  card: { background: '#222', padding: 15, borderRadius: 12, marginBottom: 15 },
-  cardDestaque: { background: '#331111', padding: 15, borderRadius: 12, marginBottom: 15, border: '2px solid #ff3333' },
-  box: { background: '#111', padding: 10, borderRadius: 8, marginBottom: 10 },
-  input: { width: '100%', padding: 12, marginBottom: 10, borderRadius: 8, border: 'none' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 },
-  green: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
-  red: { width: '100%', padding: 14, background: '#d50000', color: '#fff', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
-  yellow: { width: '100%', padding: 14, background: '#ffb300', color: '#111', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
-  itemBtn: { width: '100%', minHeight: 70, padding: 12, background: '#333', color: '#fff', border: 'none', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 15 },
-  premiumBtn: { width: '100%', minHeight: 70, padding: 12, background: '#3b2600', color: '#ffd166', border: '1px solid #ffb300', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 15 },
-  execBtn: { width: '100%', minHeight: 85, padding: 12, background: '#5a0000', color: '#fff', border: '2px solid #ff3333', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 16 },
-  selectedBtn: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 6, textAlign: 'center', fontWeight: 'bold' },
-  smallBtn: { padding: 10, background: '#444', color: '#fff', border: 'none', borderRadius: 8, margin: 4 },
-  itemLinha: { display: 'flex', justifyContent: 'space-between', marginBottom: 6, borderBottom: '1px solid #444', paddingBottom: 4 },
-  repor: { marginLeft: 10, padding: 5 },
-  loginPage: { background: '#111', color: '#fff', minHeight: '100vh', padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial' },
-  loginCard: { width: '100%', maxWidth: 420, background: '#222', padding: 25, borderRadius: 16, textAlign: 'center' },
-  topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 15, flexWrap: 'wrap' },
-  topActions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  atendenteNome: { fontSize: 22, fontWeight: 'bold', marginTop: 5 },
-  yellowSmall: { padding: 10, background: '#ffb300', color: '#111', border: 'none', borderRadius: 8, fontWeight: 'bold' },
-  redSmall: { padding: 10, background: '#d50000', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 'bold' },
-  operacionalInfo: { background: '#111', padding: 12, borderRadius: 8, marginBottom: 10 }
 }

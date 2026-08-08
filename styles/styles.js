@@ -1,0 +1,33 @@
+const styles = {
+  splash: { background: '#000', color: '#fff', height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', fontFamily: 'Arial' },
+  logoSplash: { width: 180, marginBottom: 15 },
+  app: { background: '#111', color: '#fff', minHeight: '100vh', padding: 15, fontFamily: 'Arial' },
+  logoBox: { textAlign: 'center' },
+  logo: { maxWidth: 150, marginBottom: 10 },
+  title: { color: '#ff3333' },
+  card: { background: '#222', padding: 15, borderRadius: 12, marginBottom: 15 },
+  cardDestaque: { background: '#331111', padding: 15, borderRadius: 12, marginBottom: 15, border: '2px solid #ff3333' },
+  box: { background: '#111', padding: 10, borderRadius: 8, marginBottom: 10 },
+  input: { width: '100%', padding: 12, marginBottom: 10, borderRadius: 8, border: 'none' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 },
+  green: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
+  red: { width: '100%', padding: 14, background: '#d50000', color: '#fff', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
+  yellow: { width: '100%', padding: 14, background: '#ffb300', color: '#111', border: 'none', borderRadius: 10, marginTop: 7, fontWeight: 'bold' },
+  itemBtn: { width: '100%', minHeight: 70, padding: 12, background: '#333', color: '#fff', border: 'none', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 15 },
+  premiumBtn: { width: '100%', minHeight: 70, padding: 12, background: '#3b2600', color: '#ffd166', border: '1px solid #ffb300', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 15 },
+  execBtn: { width: '100%', minHeight: 85, padding: 12, background: '#5a0000', color: '#fff', border: '2px solid #ff3333', borderRadius: 12, marginTop: 5, textAlign: 'center', fontSize: 16 },
+  selectedBtn: { width: '100%', padding: 14, background: '#00c853', color: '#fff', border: 'none', borderRadius: 10, marginTop: 6, textAlign: 'center', fontWeight: 'bold' },
+  smallBtn: { padding: 10, background: '#444', color: '#fff', border: 'none', borderRadius: 8, margin: 4 },
+  itemLinha: { display: 'flex', justifyContent: 'space-between', marginBottom: 6, borderBottom: '1px solid #444', paddingBottom: 4 },
+  repor: { marginLeft: 10, padding: 5 },
+  loginPage: { background: '#111', color: '#fff', minHeight: '100vh', padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial' },
+  loginCard: { width: '100%', maxWidth: 420, background: '#222', padding: 25, borderRadius: 16, textAlign: 'center' },
+  topBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 15, flexWrap: 'wrap' },
+  topActions: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  atendenteNome: { fontSize: 22, fontWeight: 'bold', marginTop: 5 },
+  yellowSmall: { padding: 10, background: '#ffb300', color: '#111', border: 'none', borderRadius: 8, fontWeight: 'bold' },
+  redSmall: { padding: 10, background: '#d50000', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 'bold' },
+  operacionalInfo: { background: '#111', padding: 12, borderRadius: 8, marginBottom: 10 }
+}
+
+export default styles
