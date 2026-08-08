@@ -3,6 +3,7 @@ import { db } from './firebase'
 import LoginScreen from './components/LoginScreen'
 import HeaderBar from './components/HeaderBar'
 import PainelCardapioComanda from './components/PainelCardapioComanda'
+import ItensComandaPanel from './components/ItensComandaPanel'
 import styles from './styles/styles'
 
 import {
@@ -1092,6 +1093,17 @@ MESTRE DO ESPETO PDV
     alert('Item excluído do cardápio.')
   }
 
+  const selecionarComanda = (comanda) => {
+    setComandaAtual(comanda)
+
+    setTimeout(() => {
+      document.getElementById('comanda-detalhe')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      })
+    }, 100)
+  }
+
   const comandasFiltradas = comandas.filter(c =>
     (c.cliente || '').toLowerCase().includes(busca.toLowerCase())
   )
@@ -1164,7 +1176,15 @@ MESTRE DO ESPETO PDV
         <h2>Comandas Abertas em Tempo Real</h2>
         <input placeholder="Buscar comanda..." value={busca} onChange={e => setBusca(e.target.value)} style={styles.input} />
         {comandasFiltradas.map(c => (
-          <button key={c.id} onClick={() => setComandaAtual(c)} style={styles.smallBtn}>
+          <button
+            key={c.id}
+            onClick={() => selecionarComanda(c)}
+            style={{
+              ...styles.smallBtn,
+              background: comandaAtual?.id === c.id ? '#5a0000' : styles.smallBtn.background,
+              border: comandaAtual?.id === c.id ? '2px solid #ffb300' : 'none'
+            }}
+          >
             {c.tipoComanda || 'Cliente'} — {c.cliente} — {(c.itens || []).length} itens
           </button>
         ))}
@@ -1205,8 +1225,8 @@ MESTRE DO ESPETO PDV
       )}
 
       {comandaAtual && (
-        <div style={styles.card}>
-          <h2>Comanda: {comandaAtual.cliente}</h2>
+        <div id="comanda-detalhe" style={{ ...styles.card, border: '2px solid #ffb300' }}>
+          <h2 style={{ marginBottom: 4 }}>🧾 Comanda: {comandaAtual.cliente}</h2>
           <p>Tipo: {comandaAtual.tipoComanda || 'Cliente'} {comandaAtual.motivo ? `| Motivo: ${comandaAtual.motivo}` : ''}</p>
 
           <PainelCardapioComanda
@@ -1216,36 +1236,15 @@ MESTRE DO ESPETO PDV
             abrirSelecaoExecutivo={abrirSelecaoExecutivo}
           />
 
-          <h2>Itens</h2>
-          {(comandaAtual.itens || []).map((item, index) => {
-  const tipoAtual = comandaAtual.tipoComanda || 'Cliente'
-  const nomeEstoque = item.estoqueNome || item.nome
-  const custoItem = custoProduto(nomeEstoque)
-
-  return (
-    <div key={index} style={styles.itemLinha}>
-      <span>
-        {item.nome} — R$ {Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)}
-
-        {adminLiberado && tipoAtual !== 'Cliente' && (
-          <small>
-            <br />
-            Custo: R$ {custoItem.toFixed(2)}
-          </small>
-        )}
-
-        {item.tipo === 'executivo' && (
-          <small>
-            <br />
-            Espetos: {item.espetosInclusos.join(', ')}
-          </small>
-        )}
-      </span>
-
-      <button onClick={() => removerItem(index)}>❌</button>
-    </div>
-  )
-})}
+          <ItensComandaPanel
+            comandaAtual={comandaAtual}
+            cardapio={cardapio}
+            adminLiberado={adminLiberado}
+            custoProduto={custoProduto}
+            adicionarItem={adicionarItem}
+            removerItem={removerItem}
+            abrirSelecaoExecutivo={abrirSelecaoExecutivo}
+          />
 
           {(comandaAtual.tipoComanda || 'Cliente') === 'Cliente' ? (
             <h2>Total: R$ {total.toFixed(2)}</h2>
