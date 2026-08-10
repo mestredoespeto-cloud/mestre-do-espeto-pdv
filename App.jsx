@@ -18,7 +18,8 @@ import {
   serverTimestamp,
   getDocs,
   query,
-  where
+  where,
+  runTransaction
 } from 'firebase/firestore'
 
 const cardapioPadrao = {
@@ -235,6 +236,13 @@ export default function App() {
   const [espetoLanche, setEspetoLanche] = useState(null)
   const [cardapio, setCardapio] = useState(cardapioPadrao)
   const [itensCardapio, setItensCardapio] = useState([])
+  const [pedidosCozinha, setPedidosCozinha] = useState([])
+  const [mostrarFilaCozinha, setMostrarFilaCozinha] = useState(false)
+  const [enviandoCozinha, setEnviandoCozinha] = useState(false)
+  const [postoImpressaoAtivo, setPostoImpressaoAtivo] = useState(
+    localStorage.getItem('mestre_posto_impressao') === '1'
+  )
+  const [pedidoEmImpressao, setPedidoEmImpressao] = useState(null)
 
   const [mostrarGestaoCardapio, setMostrarGestaoCardapio] = useState(false)
   const [mostrarEstoque, setMostrarEstoque] = useState(false)
@@ -309,6 +317,19 @@ export default function App() {
     })
 
     return () => unsubCardapio()
+  }, [])
+
+  useEffect(() => {
+    const unsubPedidos = onSnapshot(collection(db, 'pedidosCozinha'), snapshot => {
+      const lista = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(p => p.dataPedido === hoje() && p.status !== 'entregue')
+        .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0))
+
+      setPedidosCozinha(lista)
+    })
+
+    return () => unsubPedidos()
   }, [])
 
   const entrarNoSistema = () => {
@@ -922,6 +943,384 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       ? totalVendaComandaAtual
       : Number(financeiroComandaAtual.totalRepasse || 0))
     : 0
+
+  const enviarParaCozinha = async () => {
+    if (!comandaAtual) return alert('Selecione uma comanda.')
+    if (enviandoCozinha) return
+
+    const todosItens = comandaAtual.itens || []
+    const jaEnviados = Number(comandaAtual.itensEnviadosCozinha || 0)
+    const novosItens = todosItens.slice(jaEnviados)
+
+    if (novosItens.length === 0) {
+      return alert('Não há itens novos para enviar à cozinha.')
+    }
+
+    setEnviandoCozinha(true)
+
+    try {
+      const sequenciaRef = doc(db, 'controle', 'sequenciaCozinha')
+      const pedidoRef = doc(collection(db, 'pedidosCozinha'))
+      let numeroGerado = 0
+
+      await runTransaction(db, async transaction => {
+        const sequenciaSnap = await transaction.get(sequenciaRef)
+        const dadosSequencia = sequenciaSnap.exists() ? sequenciaSnap.data() : {}
+        const dataAtual = hoje()
+
+        const ultimoNumero = dadosSequencia.data === dataAtual
+          ? Number(dadosSequencia.ultimoNumero || 0)
+          : 0
+
+        numeroGerado = ultimoNumero + 1
+
+        transaction.set(sequenciaRef, {
+          data: dataAtual,
+          ultimoNumero: numeroGerado,
+          atualizadoEm: serverTimestamp()
+        })
+
+        transaction.set(pedidoRef, {
+          numero: numeroGerado,
+          dataPedido: dataAtual,
+          comandaId: comandaAtual.id,
+          cliente: comandaAtual.cliente || '',
+          atendente: comandaAtual.atendente || atendente || '',
+          itens: novosItens,
+          status: 'novo',
+          statusImpressao: 'aguardando',
+          criadoEmISO: new Date().toISOString(),
+          criadoEm: serverTimestamp()
+        })
+
+        transaction.update(doc(db, 'comandas', comandaAtual.id), {
+          itensEnviadosCozinha: todosItens.length,
+          ultimoPedidoCozinha: numeroGerado
+        })
+      })
+
+      alert(`Pedido nº ${String(numeroGerado).padStart(4, '0')} enviado para a cozinha!`)
+      setMostrarFilaCozinha(true)
+    } catch (error) {
+      console.error('Erro ao enviar pedido para cozinha:', error)
+      alert('Não foi possível enviar o pedido para a cozinha. Tente novamente.')
+    } finally {
+      setEnviandoCozinha(false)
+    }
+  }
+
+  const atualizarStatusPedidoCozinha = async (pedido, novoStatus) => {
+    try {
+      await updateDoc(doc(db, 'pedidosCozinha', pedido.id), {
+        status: novoStatus,
+        statusAtualizadoEm: serverTimestamp()
+      })
+    } catch (error) {
+      console.error('Erro ao atualizar pedido da cozinha:', error)
+      alert('Não foi possível atualizar o status do pedido.')
+    }
+  }
+
+  const rotuloStatusCozinha = status => {
+    if (status === 'preparo') return '🔥 Em preparo'
+    if (status === 'pronto') return '🟢 Pronto'
+    if (status === 'entregue') return '✅ Entregue'
+    return '🟡 Novo'
+  }
+
+  const resumoItemCozinha = item => {
+    if (item.tipo === 'executivo') {
+      return `${item.nome} — ${(item.espetosInclusos || []).join(', ')} — ${item.acompanhamento || 'Arroz Branco'}${item.observacao ? ` — OBS: ${item.observacao}` : ''}`
+    }
+
+    if (item.tipo === 'combo') {
+      const comps = (item.componentesInclusos || [])
+        .map(c => `${Number(c.qtd || 1)}x ${c.nome}`)
+        .join(', ')
+      return `${item.nome} — ${(item.espetosInclusos || []).join(', ')}${comps ? ` — ${comps}` : ''}${item.observacao ? ` — OBS: ${item.observacao}` : ''}`
+    }
+
+    if (item.tipo === 'lanche') {
+      return `${item.nome} — ${item.espetoEscolhido || ''}${item.observacao ? ` — OBS: ${item.observacao}` : ''}`
+    }
+
+    return `${item.nome}${item.observacao ? ` — OBS: ${item.observacao}` : ''}`
+  }
+
+  const escaparHtmlImpressao = (valor = '') =>
+    String(valor)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+
+  const textoPedidoTermico = pedido => {
+    const linhasItens = (pedido.itens || []).map((item, index) => {
+      const prefixo = `${index + 1}. `
+
+      if (item.tipo === 'executivo') {
+        return `${prefixo}${item.nome}
+ESP: ${(item.espetosInclusos || []).join(' / ')}
+${item.acompanhamento || 'Arroz Branco'}${item.observacao ? `\nOBS: ${item.observacao}` : ''}`
+      }
+
+      if (item.tipo === 'combo') {
+        const comps = (item.componentesInclusos || [])
+          .map(c => `${Number(c.qtd || 1)}x ${c.nome}`)
+          .join(' / ')
+
+        return `${prefixo}${item.nome}
+ESP: ${(item.espetosInclusos || []).join(' / ')}${comps ? `\nACOMP: ${comps}` : ''}${item.observacaoCombo ? `\n${item.observacaoCombo}` : ''}${item.observacao ? `\nOBS: ${item.observacao}` : ''}`
+      }
+
+      if (item.tipo === 'lanche') {
+        return `${prefixo}${item.nome}
+ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao}` : ''}`
+      }
+
+      return `${prefixo}${item.nome}${item.observacao ? `\nOBS: ${item.observacao}` : ''}`
+    })
+
+    const hora = pedido.criadoEmISO
+      ? new Date(pedido.criadoEmISO).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      : new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+
+    return {
+      cabecalho: 'MESTRE DO ESPETO',
+      numero: `PEDIDO ${String(pedido.numero || 0).padStart(4, '0')}`,
+      cliente: pedido.cliente || 'SEM COMANDA',
+      atendente: pedido.atendente || '-',
+      hora,
+      itens: linhasItens
+    }
+  }
+
+  const imprimirPedidoTermico = (pedido, automatico = false) => {
+    const dados = textoPedidoTermico(pedido)
+    const win = window.open('', '_blank', 'width=320,height=560')
+
+    if (!win) {
+      if (!automatico) alert('Libere pop-ups para imprimir.')
+      return false
+    }
+
+    const itensHtml = dados.itens.map(item => {
+      const linhas = item.split('\n')
+      const primeira = escaparHtmlImpressao(linhas.shift() || '')
+      const resto = linhas.map(linha => {
+        const seguro = escaparHtmlImpressao(linha)
+        if (linha.startsWith('OBS:')) {
+          return `<div class="obs">${seguro}</div>`
+        }
+        return `<div class="detalhe">${seguro}</div>`
+      }).join('')
+
+      return `<div class="item"><div class="item-titulo">${primeira}</div>${resto}</div>`
+    }).join('<div class="separador"></div>')
+
+    win.document.open()
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${escaparHtmlImpressao(dados.numero)}</title>
+          <style>
+            @page { size: 58mm auto; margin: 0; }
+
+            html, body {
+              width: 48mm;
+              margin: 0;
+              padding: 0;
+              background: #fff;
+              color: #000;
+            }
+
+            body {
+              font-family: Arial, Helvetica, sans-serif;
+              font-size: 13px;
+              line-height: 1.12;
+              font-weight: 700;
+            }
+
+            .cupom {
+              width: 48mm;
+              padding: 1mm 0 2mm 0;
+            }
+
+            .marca {
+              text-align: center;
+              font-size: 14px;
+              font-weight: 900;
+              margin-bottom: 2px;
+            }
+
+            .pedido-numero {
+              text-align: center;
+              font-size: 21px;
+              line-height: 1;
+              font-weight: 900;
+              margin: 3px 0 5px 0;
+              border-top: 2px solid #000;
+              border-bottom: 2px solid #000;
+              padding: 4px 0;
+            }
+
+            .comanda {
+              font-size: 17px;
+              line-height: 1.05;
+              font-weight: 900;
+              margin: 4px 0;
+            }
+
+            .meta {
+              font-size: 11px;
+              font-weight: 700;
+              margin-bottom: 5px;
+            }
+
+            .item {
+              margin: 5px 0;
+            }
+
+            .item-titulo {
+              font-size: 15px;
+              line-height: 1.08;
+              font-weight: 900;
+            }
+
+            .detalhe {
+              font-size: 12px;
+              line-height: 1.1;
+              margin-top: 1px;
+            }
+
+            .obs {
+              font-size: 15px;
+              line-height: 1.08;
+              font-weight: 900;
+              border: 2px solid #000;
+              padding: 3px;
+              margin-top: 3px;
+              text-transform: uppercase;
+            }
+
+            .separador {
+              border-top: 1px dashed #000;
+              margin: 4px 0;
+            }
+
+            .fim {
+              border-top: 2px solid #000;
+              margin-top: 5px;
+              padding-top: 2px;
+              height: 4mm;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="cupom">
+            <div class="marca">${escaparHtmlImpressao(dados.cabecalho)}</div>
+            <div class="pedido-numero">${escaparHtmlImpressao(dados.numero)}</div>
+
+            <div class="comanda">${escaparHtmlImpressao(dados.cliente)}</div>
+            <div class="meta">
+              ATEND: ${escaparHtmlImpressao(dados.atendente)}<br />
+              HORA: ${escaparHtmlImpressao(dados.hora)}
+            </div>
+
+            ${itensHtml}
+
+            <div class="fim"></div>
+          </div>
+
+          <script>
+            window.onload = () => {
+              setTimeout(() => {
+                window.print()
+                setTimeout(() => window.close(), 800)
+              }, 120)
+            }
+          </script>
+        </body>
+      </html>
+    `)
+    win.document.close()
+    return true
+  }
+
+  const imprimirPedidoFilaManual = pedido => {
+    imprimirPedidoTermico(pedido, false)
+  }
+
+  useEffect(() => {
+    if (!postoImpressaoAtivo || pedidoEmImpressao) return
+
+    const pendente = pedidosCozinha.find(p =>
+      p.statusImpressao !== 'impresso' &&
+      p.statusImpressao !== 'imprimindo'
+    )
+
+    if (!pendente) return
+
+    const processar = async () => {
+      setPedidoEmImpressao(pendente.id)
+
+      try {
+        // Reserva o pedido para reduzir impressão duplicada entre estações.
+        const ref = doc(db, 'pedidosCozinha', pendente.id)
+        const reservado = await runTransaction(db, async transaction => {
+          const snap = await transaction.get(ref)
+          if (!snap.exists()) return false
+
+          const atual = snap.data()
+          if (atual.statusImpressao === 'impresso' || atual.statusImpressao === 'imprimindo') {
+            return false
+          }
+
+          transaction.update(ref, {
+            statusImpressao: 'imprimindo',
+            impressaoIniciadaEm: serverTimestamp()
+          })
+          return true
+        })
+
+        if (!reservado) return
+
+        const abriu = imprimirPedidoTermico(pendente, true)
+
+        if (!abriu) {
+          await updateDoc(ref, { statusImpressao: 'aguardando' })
+          return
+        }
+
+        // No navegador não existe confirmação confiável de que o papel saiu;
+        // marcamos como impresso depois que o diálogo/comando foi disparado.
+        setTimeout(async () => {
+          try {
+            await updateDoc(ref, {
+              statusImpressao: 'impresso',
+              impressoEm: serverTimestamp()
+            })
+          } catch (e) {
+            console.error('Erro ao confirmar impressão:', e)
+          }
+        }, 1800)
+      } catch (error) {
+        console.error('Erro na impressão automática:', error)
+        try {
+          await updateDoc(doc(db, 'pedidosCozinha', pendente.id), {
+            statusImpressao: 'aguardando'
+          })
+        } catch (e) {}
+      } finally {
+        setTimeout(() => setPedidoEmImpressao(null), 2200)
+      }
+    }
+
+    processar()
+  }, [pedidosCozinha, postoImpressaoAtivo, pedidoEmImpressao])
 
   const imprimirTexto = (texto) => {
     tocarSom('/impressao.mp3')
@@ -1547,7 +1946,132 @@ MESTRE DO ESPETO PDV
         bloquearAdministrador={bloquearAdministrador}
       />
 
+      <div style={styles.card}>
+        <button
+          onClick={() => setMostrarFilaCozinha(!mostrarFilaCozinha)}
+          style={styles.yellow}
+        >
+          👨‍🍳 Fila da Cozinha ({pedidosCozinha.length})
+        </button>
 
+        {mostrarFilaCozinha && (
+          <div style={{ marginTop: 12 }}>
+            <h2>🔥 Fila da Cozinha — ordem de chegada</h2>
+
+            <div style={{
+              padding: 10,
+              marginBottom: 12,
+              background: postoImpressaoAtivo ? '#17351f' : '#333',
+              borderRadius: 8
+            }}>
+              <strong>
+                Impressão automática: {postoImpressaoAtivo ? '🟢 ATIVA' : '⚪ DESATIVADA'}
+              </strong>
+              <div style={{ marginTop: 8 }}>
+                <button
+                  onClick={() => {
+                    const novo = !postoImpressaoAtivo
+                    setPostoImpressaoAtivo(novo)
+                    localStorage.setItem('mestre_posto_impressao', novo ? '1' : '0')
+                  }}
+                  style={postoImpressaoAtivo ? styles.red : styles.green}
+                >
+                  {postoImpressaoAtivo ? '⏹ Desativar posto de impressão' : '🖨️ Ativar este computador como impressora'}
+                </button>
+              </div>
+              <small>
+                Ative somente no computador conectado por USB à POS-58.
+              </small>
+            </div>
+
+            {pedidosCozinha.length === 0 && (
+              <p>Nenhum pedido aguardando hoje.</p>
+            )}
+
+            {pedidosCozinha.map(pedido => (
+              <div
+                key={pedido.id}
+                style={{
+                  background: '#222',
+                  border: pedido.status === 'pronto'
+                    ? '2px solid #22c55e'
+                    : pedido.status === 'preparo'
+                      ? '2px solid #f97316'
+                      : '2px solid #ffb300',
+                  borderRadius: 10,
+                  padding: 12,
+                  marginBottom: 12
+                }}
+              >
+                <h2 style={{ margin: '0 0 6px 0' }}>
+                  Pedido nº {String(pedido.numero || 0).padStart(4, '0')}
+                </h2>
+                <strong>{pedido.cliente}</strong>
+                <div>Atendente: {pedido.atendente || '-'}</div>
+                <div>Status: {rotuloStatusCozinha(pedido.status)}</div>
+
+                <div style={{ marginTop: 10 }}>
+                  {(pedido.itens || []).map((item, index) => (
+                    <div
+                      key={index}
+                      style={{
+                        padding: '7px 0',
+                        borderTop: index ? '1px solid #444' : 'none'
+                      }}
+                    >
+                      {index + 1}. {resumoItemCozinha(item)}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 8, fontSize: 13 }}>
+                  Impressão: {pedido.statusImpressao === 'impresso'
+                    ? '✅ Impresso'
+                    : pedido.statusImpressao === 'imprimindo'
+                      ? '🖨️ Imprimindo'
+                      : '⏳ Aguardando'}
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                  <button
+                    onClick={() => imprimirPedidoFilaManual(pedido)}
+                    style={styles.smallBtn}
+                  >
+                    🖨️ Reimprimir
+                  </button>
+
+                  {pedido.status === 'novo' && (
+                    <button
+                      onClick={() => atualizarStatusPedidoCozinha(pedido, 'preparo')}
+                      style={styles.yellow}
+                    >
+                      🔥 Iniciar preparo
+                    </button>
+                  )}
+
+                  {pedido.status === 'preparo' && (
+                    <button
+                      onClick={() => atualizarStatusPedidoCozinha(pedido, 'pronto')}
+                      style={styles.green}
+                    >
+                      🟢 Marcar pronto
+                    </button>
+                  )}
+
+                  {pedido.status === 'pronto' && (
+                    <button
+                      onClick={() => atualizarStatusPedidoCozinha(pedido, 'entregue')}
+                      style={styles.green}
+                    >
+                      ✅ Entregue
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={styles.card}>
         <h2>Nova Comanda</h2>
@@ -1898,9 +2422,17 @@ MESTRE DO ESPETO PDV
             <option value="cartao">Cartão</option>
           </select>
 
-          <button onClick={imprimirCozinha} style={styles.yellow}>
-  👨‍🍳 Imprimir Pedido Cozinha
-</button>
+          <button
+            onClick={enviarParaCozinha}
+            style={styles.yellow}
+            disabled={enviandoCozinha}
+          >
+            {enviandoCozinha ? '⏳ Enviando...' : '🔥 Enviar para Cozinha'}
+          </button>
+
+          <button onClick={imprimirCozinha} style={styles.smallBtn}>
+            🖨️ Imprimir manualmente
+          </button>
 
 <button onClick={imprimirCliente} style={styles.green}>
   🖨️ Imprimir Comanda Cliente
