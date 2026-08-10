@@ -281,16 +281,10 @@ export default function App() {
   }, [dataRelatorio])
 
   useEffect(() => {
-    const unsubCardapio = onSnapshot(collection(db, 'cardapio'), async snapshot => {
+    const unsubCardapio = onSnapshot(collection(db, 'cardapio'), snapshot => {
       if (snapshot.empty) {
-        const itensPadrao = montarItensPadraoCardapio()
-
-        await Promise.all(
-          itensPadrao.map(item => addDoc(collection(db, 'cardapio'), item))
-        )
-
-        setItensCardapio(itensPadrao)
-        setCardapio(agruparCardapio(itensPadrao))
+        setItensCardapio([])
+        setCardapio({})
         return
       }
 
@@ -1074,59 +1068,54 @@ MESTRE DO ESPETO PDV
     if (!adminLiberado) return alert('Acesso administrativo necessário.')
 
     const confirmar = confirm(
-      'ATENÇÃO: isso substituirá o cardápio atual do Firebase pelo cardápio oficial atualizado. ' +
-      'Será criado um backup do cardápio atual antes da troca. Deseja continuar?'
+      'Será criado um backup e o cardápio será reconstruído com apenas uma cópia de cada produto. Comandas, histórico e estoque não serão apagados. Continuar?'
     )
-
     if (!confirmar) return
 
     try {
       const snapshotAtual = await getDocs(collection(db, 'cardapio'))
       const agora = new Date()
-      const carimbo = agora.toISOString().replace(/[:.]/g, '-')
-      const nomeBackup = `cardapio_backup_${carimbo}`
+      const nomeBackup = `cardapio_backup_${agora.toISOString().replace(/[:.]/g, '-')}`
 
       if (!snapshotAtual.empty) {
-        await Promise.all(
-          snapshotAtual.docs.map(d =>
-            addDoc(collection(db, nomeBackup), {
-              ...d.data(),
-              idOriginal: d.id,
-              backupEm: new Date().toISOString()
-            })
-          )
-        )
+        await Promise.all(snapshotAtual.docs.map(d =>
+          addDoc(collection(db, nomeBackup), {
+            ...d.data(),
+            idOriginal: d.id,
+            backupEm: agora.toISOString()
+          })
+        ))
       }
 
-      await Promise.all(
-        snapshotAtual.docs.map(d => deleteDoc(doc(db, 'cardapio', d.id)))
-      )
+      const mapaOficial = new Map()
+      montarItensPadraoCardapio().forEach(item => {
+        const chave = `${String(item.categoria || '').trim().toLowerCase()}::${String(item.nome || '').trim().toLowerCase()}`
+        mapaOficial.set(chave, item)
+      })
+      const itensOficiais = Array.from(mapaOficial.values())
 
-      const itensOficiais = montarItensPadraoCardapio()
+      await Promise.all(snapshotAtual.docs.map(d =>
+        deleteDoc(doc(db, 'cardapio', d.id))
+      ))
 
-      await Promise.all(
-        itensOficiais.map(item => addDoc(collection(db, 'cardapio'), item))
-      )
+      await Promise.all(itensOficiais.map(item =>
+        addDoc(collection(db, 'cardapio'), item)
+      ))
 
       const estoqueAtualizado = { ...estoque }
-
       itensOficiais.forEach(item => {
+        if (item.controlaEstoque === false) return
         const nomeEstoque = item.estoqueNome || item.nome
         if (estoqueAtualizado[nomeEstoque] === undefined) {
           estoqueAtualizado[nomeEstoque] = 0
         }
       })
-
       await salvarEstoque(estoqueAtualizado)
 
-      alert(
-        'Cardápio oficial atualizado com sucesso! ' +
-        `Backup criado em: ${nomeBackup}. ` +
-        'Confira os estoques dos produtos novos antes de iniciar as vendas.'
-      )
+      alert(`Cardápio corrigido: ${itensOficiais.length} itens únicos. Backup: ${nomeBackup}`)
     } catch (error) {
-      console.error('Erro na migração do cardápio:', error)
-      alert('Erro ao atualizar o cardápio oficial. Verifique o console e tente novamente somente após corrigir.')
+      console.error('Erro ao corrigir cardápio:', error)
+      alert('Erro ao corrigir o cardápio. Não execute novamente até verificarmos.')
     }
   }
 
@@ -1453,11 +1442,10 @@ MESTRE DO ESPETO PDV
       }}>
         <strong>Cardápio Oficial Mestre do Espeto</strong>
         <p style={{ marginBottom: 8 }}>
-          Use o botão abaixo uma única vez para substituir o cardápio antigo do Firebase
-          pelo cardápio atual. O sistema cria um backup antes da troca.
+          Este botão cria um backup e reconstrói o cardápio oficial. A correção também impede que o sistema recrie automaticamente os itens durante a limpeza, que era a causa da duplicação.
         </p>
         <button onClick={migrarCardapioOficial} style={styles.yellow}>
-          🚀 Atualizar para Cardápio Oficial
+          🧹 Corrigir / Atualizar Cardápio Oficial
         </button>
       </div>
 
