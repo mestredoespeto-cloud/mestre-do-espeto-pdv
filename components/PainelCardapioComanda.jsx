@@ -7,7 +7,10 @@ const nomeCurtoCategoria = (categoria) => {
     'Espetos Premium Avulso': '⭐ Premium',
     Executivos: '🍽️ Executivos',
     Adicionais: '➕ Adicionais',
-    Bebidas: '🥤 Bebidas'
+    Bebidas: '🥤 Bebidas',
+    Porções: '🍟 Porções',
+    'Lanche no Espeto': '🥖 Lanche',
+    Combos: '🎁 Combos'
   }
 
   return mapa[categoria] || categoria

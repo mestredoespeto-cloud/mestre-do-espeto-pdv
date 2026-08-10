@@ -22,58 +22,93 @@ import {
 
 const cardapioPadrao = {
   Espetos: [
-    { nome: 'Carne Bovina', preco: 10 },
-    { nome: 'Costela', preco: 10 },
-    { nome: 'Coração de Frango', preco: 10 },
-    { nome: 'Frango', preco: 10 },
-    { nome: 'Kafta', preco: 10 },
-    { nome: 'Linguiça Pernil', preco: 10 },
-    { nome: 'Lombo', preco: 10 },
-    { nome: 'Panceta', preco: 10 },
-    { nome: 'Pão de Alho', preco: 10 },
-    { nome: 'Queijo Coalho', preco: 10 },
-    { nome: 'Tulipa', preco: 10 }
+    { nome: 'Fraldinha', preco: 12.90, precoCusto: 5.19 },
+    { nome: 'Costela', preco: 12.90, precoCusto: 5.19 },
+    { nome: 'Franbacon', preco: 12.90, precoCusto: 4.00 },
+    { nome: 'Linguiça Pernil', preco: 12.90, precoCusto: 4.00 },
+    { nome: 'Panceta', preco: 12.90, precoCusto: 0 },
+    { nome: 'Tulipa', preco: 12.90, precoCusto: 0 },
+    { nome: 'Coração', preco: 12.90, precoCusto: 5.00 },
+    { nome: 'Kafta', preco: 12.90, precoCusto: 5.00 },
+    { nome: 'Pão de Alho', preco: 12.90, precoCusto: 2.80 },
+    { nome: 'Queijo Coalho', preco: 12.90, precoCusto: 3.14 }
   ],
+
   'Espetos Premium Avulso': [
-  { nome: 'Medalhão de Frango', preco: 12, premium: true },
-  { nome: 'Linguiça Cuiabana', preco: 12, premium: true },
-  { nome: 'Misto Especial', preco: 12, premium: true },
-  { nome: 'Espeto de Almôndega', preco: 12, premium: true }
-],
+    { nome: 'Medalhão de Carne', preco: 14.90, precoCusto: 8.00, premium: true },
+    { nome: 'Medalhão de Frango', preco: 14.90, precoCusto: 7.00, premium: true },
+    { nome: 'Linguiça Cuiabana', preco: 14.90, precoCusto: 6.00, premium: true },
+    { nome: 'Medalhão de Mandioca', preco: 14.90, precoCusto: 5.50, premium: true },
+    { nome: 'Medalhão de Abobrinha', preco: 14.90, precoCusto: 5.50, premium: true },
+    { nome: 'Misto', preco: 14.90, precoCusto: 6.00, premium: true },
+    { nome: 'Abacaxi com Canela', preco: 14.90, precoCusto: 4.00, premium: true },
+    { nome: 'Romeu e Julieta', preco: 14.90, precoCusto: 4.14, premium: true }
+  ],
+
   Executivos: [
-    { nome: 'Executivo Mestre Clássico 1', preco: 29.99, qtdEspetos: 2 },
-    { nome: 'Executivo Mestre Clássico 2', preco: 39.99, qtdEspetos: 3 }
+    { nome: 'Essencial', preco: 25.90, qtdEspetos: 1 },
+    { nome: 'Tradicional', preco: 34.90, qtdEspetos: 2 },
+    { nome: 'Mestre', preco: 41.90, qtdEspetos: 3 }
   ],
+
   Adicionais: [
-    { nome: 'Porção de Arroz 500g', preco: 10 },
-    { nome: 'Porção de Vinagrete 350g', preco: 8 },
-    { nome: 'Medalhão de Frango no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Medalhão de Frango' },
-    { nome: 'Linguiça Cuiabana no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Linguiça Cuiabana' },
-    { nome: 'Misto Especial no Executivo', preco: 10, premiumExecutivo: true, estoqueNome: 'Misto Especial' }
+    { nome: 'Adicional Baião de Dois', preco: 4.00, precoCusto: 0, controlaEstoque: false }
   ],
- Bebidas: [
-  { nome: 'Água sem Gás', preco: 3 },
-  { nome: 'Água com Gás', preco: 3 },
-  { nome: 'Coca-Cola Lata', preco: 6 },
-  { nome: 'Coca-Cola Zero Lata', preco: 6 },
-  { nome: 'Fanta Laranja Lata', preco: 6 },
-  { nome: 'Fanta Uva Lata', preco: 6 },
-  { nome: 'Suco Del Valle Laranja 450ml', preco: 6 },
-  { nome: 'Suco Del Valle Uva 450ml', preco: 6 },
-  { nome: 'Suco Kapo Laranja', preco: 5 },
-  { nome: 'Suco Kapo Maracujá', preco: 5 },
-  { nome: 'Suco Kapo Morango', preco: 5 },
-  { nome: 'Suco Kapo Uva', preco: 5 },
-  { nome: 'Brahma Lata 350ml', preco: 5 },
-  { nome: 'Skol Lata 350ml', preco: 5 },
-  { nome: 'Original Lata 350ml', preco: 8 },
-  { nome: 'Original 300ml', preco: 6 },
-  { nome: 'Combo 3 Original', preco: 15 },
-  { nome: 'Heineken Long Neck 330ml', preco: 12 },
-  { nome: 'Heineken Long Neck Zero 330ml', preco: 12 },
-  { nome: 'Energético Monster 473ml', preco: 12 }
-]
+
+  Porções: [
+    { nome: 'Batata Frita 500g', preco: 29.90, precoCusto: 0 },
+    { nome: 'Batata Cheddar e Bacon 600g', preco: 35.90, precoCusto: 0 },
+    { nome: 'Batata Mestre 700g', preco: 45.90, precoCusto: 0 }
+  ],
+
+  'Lanche no Espeto': [
+    { nome: 'Lanche no Espeto', preco: 23.90, precoCusto: 0 }
+  ],
+
+  Bebidas: [
+    { nome: 'Chopp Brahma 350ml', preco: 13.00, precoCusto: 0 },
+
+    { nome: 'Original 300ml', preco: 7.00, precoCusto: 3.30 },
+    { nome: 'Brahma 300ml', preco: 6.00, precoCusto: 2.63 },
+    { nome: 'Skol 300ml', preco: 6.00, precoCusto: 2.63 },
+    { nome: 'Combo 3 Cervejas 300ml', preco: 15.00, precoCusto: 0 },
+
+    { nome: 'Brahma 600ml', preco: 14.00, precoCusto: 0 },
+    { nome: 'Skol 600ml', preco: 14.00, precoCusto: 0 },
+    { nome: 'Original 600ml', preco: 15.00, precoCusto: 8.19 },
+    { nome: 'Spaten 600ml', preco: 16.00, precoCusto: 8.19 },
+
+    { nome: 'Heineken Long Neck', preco: 16.00, precoCusto: 7.00 },
+    { nome: 'Heineken 0.0', preco: 16.00, precoCusto: 7.00 },
+    { nome: 'Amstel Ultra', preco: 16.00, precoCusto: 7.00 },
+
+    { nome: 'Coca-Cola 350ml', preco: 7.00, precoCusto: 3.30 },
+    { nome: 'Coca-Cola Zero 350ml', preco: 7.00, precoCusto: 3.30 },
+    { nome: 'Guaraná Antarctica 350ml', preco: 7.00, precoCusto: 3.01 },
+    { nome: 'Guaraná Zero 350ml', preco: 7.00, precoCusto: 3.00 },
+    { nome: 'Fanta Laranja 350ml', preco: 7.00, precoCusto: 3.30 },
+    { nome: 'H2O Limoneto', preco: 9.00, precoCusto: 4.09 },
+
+    { nome: 'Coca-Cola 1L', preco: 13.00, precoCusto: 7.40 },
+    { nome: 'Coca-Cola Zero 1L', preco: 13.00, precoCusto: 7.40 },
+    { nome: 'Guaraná 1L', preco: 13.00, precoCusto: 4.27 },
+    { nome: 'Guaraná Zero 1L', preco: 13.00, precoCusto: 4.27 },
+
+    { nome: 'Água sem Gás 500ml', preco: 5.00, precoCusto: 0.69 },
+    { nome: 'Água com Gás 500ml', preco: 5.50, precoCusto: 1.20 },
+
+    { nome: 'Suco Natural Laranja 400ml', preco: 12.00, precoCusto: 0 },
+    { nome: 'Suco Kapo Laranja', preco: 6.00, precoCusto: 2.65 },
+    { nome: 'Suco Kapo Uva', preco: 6.00, precoCusto: 2.65 }
+  ],
+
+  Combos: [
+    { nome: 'Happy Mestre', preco: 34.90, precoCusto: 0 },
+    { nome: 'Almoço Mestre', preco: 42.90, precoCusto: 0 },
+    { nome: 'Família Mestre', preco: 149.90, precoCusto: 0 }
+  ]
 }
+
 
 const estoqueInicial = {}
 const precoReferencia = {}
@@ -94,12 +129,44 @@ const hoje = () => {
 }
 
 const custosPadrao = {
-  'Carne Bovina': 5.2,
-  'Frango': 4,
+  'Fraldinha': 5.19,
+  'Costela': 5.19,
+  'Franbacon': 4,
+  'Linguiça Pernil': 4,
+  'Coração': 5,
   'Kafta': 5,
+  'Pão de Alho': 2.8,
+  'Queijo Coalho': 3.14,
+  'Medalhão de Carne': 8,
   'Medalhão de Frango': 7,
-  'Original 300ml': 2,
-  'Coca-Cola Lata': 3.7
+  'Linguiça Cuiabana': 6,
+  'Medalhão de Mandioca': 5.5,
+  'Medalhão de Abobrinha': 5.5,
+  'Misto': 6,
+  'Abacaxi com Canela': 4,
+  'Romeu e Julieta': 4.14,
+  'Original 300ml': 3.3,
+  'Brahma 300ml': 2.63,
+  'Skol 300ml': 2.63,
+  'Original 600ml': 8.19,
+  'Spaten 600ml': 8.19,
+  'Heineken Long Neck': 7,
+  'Heineken 0.0': 7,
+  'Amstel Ultra': 7,
+  'Coca-Cola 350ml': 3.3,
+  'Coca-Cola Zero 350ml': 3.3,
+  'Guaraná Antarctica 350ml': 3.01,
+  'Guaraná Zero 350ml': 3,
+  'Fanta Laranja 350ml': 3.3,
+  'H2O Limoneto': 4.09,
+  'Coca-Cola 1L': 7.4,
+  'Coca-Cola Zero 1L': 7.4,
+  'Guaraná 1L': 4.27,
+  'Guaraná Zero 1L': 4.27,
+  'Água sem Gás 500ml': 0.69,
+  'Água com Gás 500ml': 1.2,
+  'Suco Kapo Laranja': 2.65,
+  'Suco Kapo Uva': 2.65
 }
 
 const montarItensPadraoCardapio = () => {
@@ -111,8 +178,8 @@ const montarItensPadraoCardapio = () => {
         ...item,
         categoria,
         precoVenda: item.preco,
-        precoCusto: custosPadrao[item.nome] || 0,
-        controlaEstoque: true,
+        precoCusto: Number(item.precoCusto ?? custosPadrao[item.nome] ?? 0),
+        controlaEstoque: item.controlaEstoque !== false,
         ativo: true
       })
     })
@@ -490,8 +557,16 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
 
   const abrirSelecaoExecutivo = (item) => {
     if (!comandaAtual) return alert('Selecione ou crie uma comanda.')
+
     setExecutivoSelecionado(item)
     setEspetosExecutivo([])
+
+    setTimeout(() => {
+      document.getElementById('selecao-executivo')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      })
+    }, 100)
   }
 
   const adicionarEspetoExecutivo = (espeto) => {
@@ -510,7 +585,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
         nome: espeto.nome,
         premium: !!espeto.premium,
         precoCusto: custoProduto(espeto.nome),
-        adicional: espeto.premium ? 10 : 0
+        adicional: espeto.premium ? 5 : 0
       }
     ])
   }
@@ -995,6 +1070,66 @@ MESTRE DO ESPETO PDV
     await salvarEstoque({ ...estoque, [produto]: qtd })
   }
 
+  const migrarCardapioOficial = async () => {
+    if (!adminLiberado) return alert('Acesso administrativo necessário.')
+
+    const confirmar = confirm(
+      'ATENÇÃO: isso substituirá o cardápio atual do Firebase pelo cardápio oficial atualizado. ' +
+      'Será criado um backup do cardápio atual antes da troca. Deseja continuar?'
+    )
+
+    if (!confirmar) return
+
+    try {
+      const snapshotAtual = await getDocs(collection(db, 'cardapio'))
+      const agora = new Date()
+      const carimbo = agora.toISOString().replace(/[:.]/g, '-')
+      const nomeBackup = `cardapio_backup_${carimbo}`
+
+      if (!snapshotAtual.empty) {
+        await Promise.all(
+          snapshotAtual.docs.map(d =>
+            addDoc(collection(db, nomeBackup), {
+              ...d.data(),
+              idOriginal: d.id,
+              backupEm: new Date().toISOString()
+            })
+          )
+        )
+      }
+
+      await Promise.all(
+        snapshotAtual.docs.map(d => deleteDoc(doc(db, 'cardapio', d.id)))
+      )
+
+      const itensOficiais = montarItensPadraoCardapio()
+
+      await Promise.all(
+        itensOficiais.map(item => addDoc(collection(db, 'cardapio'), item))
+      )
+
+      const estoqueAtualizado = { ...estoque }
+
+      itensOficiais.forEach(item => {
+        const nomeEstoque = item.estoqueNome || item.nome
+        if (estoqueAtualizado[nomeEstoque] === undefined) {
+          estoqueAtualizado[nomeEstoque] = 0
+        }
+      })
+
+      await salvarEstoque(estoqueAtualizado)
+
+      alert(
+        'Cardápio oficial atualizado com sucesso! ' +
+        `Backup criado em: ${nomeBackup}. ` +
+        'Confira os estoques dos produtos novos antes de iniciar as vendas.'
+      )
+    } catch (error) {
+      console.error('Erro na migração do cardápio:', error)
+      alert('Erro ao atualizar o cardápio oficial. Verifique o console e tente novamente somente após corrigir.')
+    }
+  }
+
   const adicionarItemCardapio = async () => {
     const nome = prompt('Nome do item:')
     if (!nome || !nome.trim()) return
@@ -1143,6 +1278,8 @@ MESTRE DO ESPETO PDV
         bloquearAdministrador={bloquearAdministrador}
       />
 
+
+
       <div style={styles.card}>
         <h2>Nova Comanda</h2>
         <input placeholder="Nome / Mesa / Referência" value={cliente} onChange={e => setCliente(e.target.value)} style={styles.input} />
@@ -1191,16 +1328,16 @@ MESTRE DO ESPETO PDV
       </div>
 
       {executivoSelecionado && (
-        <div style={styles.cardDestaque}>
+        <div id="selecao-executivo" style={styles.cardDestaque}>
           <h2>{executivoSelecionado.nome}</h2>
           <p>Selecione {executivoSelecionado.qtdEspetos} espetos. Pode repetir o mesmo espeto.</p>
-          <p>Premium substitui o espeto tradicional por + R$10,00.</p>
+          <p>Espeto premium no prato: adicional de R$ 5,00.</p>
 
           <h3>Selecionados:</h3>
           {espetosExecutivo.length === 0 && <p>Nenhum selecionado</p>}
           {espetosExecutivo.map((e, index) => (
             <div key={index} style={styles.itemLinha}>
-              <span>{index + 1}. {e.nome} {e.premium ? '(Premium + R$10)' : ''}</span>
+              <span>{index + 1}. {e.nome} {e.premium ? '(Premium + R$5)' : ''}</span>
               <button onClick={() => removerEspetoExecutivo(index)}>❌</button>
             </div>
           ))}
@@ -1213,7 +1350,7 @@ MESTRE DO ESPETO PDV
                 style={e.premium ? styles.premiumBtn : styles.itemBtn}
               >
                 <strong>{e.nome}</strong><br />
-                {e.premium ? 'Premium + R$10 no executivo' : 'Incluso no executivo'}<br />
+                {e.premium ? 'Premium + R$5 no prato' : 'Incluso no executivo'}<br />
                 Estoque: {estoque[e.nome] || 0}
               </button>
             ))}
@@ -1306,6 +1443,23 @@ MESTRE DO ESPETO PDV
   {mostrarGestaoCardapio && (
     <>
       <h2>⚙️ Gestão do Cardápio</h2>
+
+      <div style={{
+        background: '#3b2600',
+        border: '1px solid #ffb300',
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 12
+      }}>
+        <strong>Cardápio Oficial Mestre do Espeto</strong>
+        <p style={{ marginBottom: 8 }}>
+          Use o botão abaixo uma única vez para substituir o cardápio antigo do Firebase
+          pelo cardápio atual. O sistema cria um backup antes da troca.
+        </p>
+        <button onClick={migrarCardapioOficial} style={styles.yellow}>
+          🚀 Atualizar para Cardápio Oficial
+        </button>
+      </div>
 
       <button onClick={adicionarItemCardapio} style={styles.green}>
         ➕ Adicionar Item ao Cardápio
