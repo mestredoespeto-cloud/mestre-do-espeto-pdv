@@ -1301,7 +1301,9 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
           try {
             await updateDoc(ref, {
               statusImpressao: 'impresso',
-              impressoEm: serverTimestamp()
+              impressoEm: serverTimestamp(),
+              status: 'preparo',
+              preparoIniciadoEm: serverTimestamp()
             })
           } catch (e) {
             console.error('Erro ao confirmar impressão:', e)
