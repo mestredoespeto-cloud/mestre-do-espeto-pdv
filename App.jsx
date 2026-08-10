@@ -243,6 +243,7 @@ export default function App() {
     localStorage.getItem('mestre_posto_impressao') === '1'
   )
   const [pedidoEmImpressao, setPedidoEmImpressao] = useState(null)
+  const [ultimaSincronizacaoCozinha, setUltimaSincronizacaoCozinha] = useState(null)
 
   const [mostrarGestaoCardapio, setMostrarGestaoCardapio] = useState(false)
   const [mostrarEstoque, setMostrarEstoque] = useState(false)
@@ -320,17 +321,61 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const unsubPedidos = onSnapshot(collection(db, 'pedidosCozinha'), snapshot => {
-      const lista = snapshot.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(p => p.dataPedido === hoje() && p.status !== 'entregue')
-        .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0))
+    const ordenarFila = docs => docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(p => p.dataPedido === hoje() && p.status !== 'entregue')
+      .sort((a, b) => Number(a.numero || 0) - Number(b.numero || 0))
 
+    const aplicarFila = lista => {
       setPedidosCozinha(lista)
-    })
+      setUltimaSincronizacaoCozinha(new Date())
+    }
 
-    return () => unsubPedidos()
-  }, [])
+    // Canal principal: atualização em tempo real do Firestore.
+    const unsubPedidos = onSnapshot(
+      collection(db, 'pedidosCozinha'),
+      snapshot => {
+        aplicarFila(ordenarFila(snapshot.docs))
+      },
+      error => {
+        console.error('Listener da cozinha perdeu conexão:', error)
+      }
+    )
+
+    // Canal de contingência: consulta periódica.
+    // Isso cobre casos em que o navegador/rede deixa o listener parado sem avisar.
+    const atualizarPorConsulta = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'pedidosCozinha'))
+        aplicarFila(ordenarFila(snapshot.docs))
+      } catch (error) {
+        console.error('Falha na consulta de contingência da cozinha:', error)
+      }
+    }
+
+    const intervalo = setInterval(() => {
+      if (postoImpressaoAtivo) atualizarPorConsulta()
+    }, 3000)
+
+    const aoFicarOnline = () => atualizarPorConsulta()
+    const aoVoltarParaAba = () => {
+      if (document.visibilityState === 'visible') atualizarPorConsulta()
+    }
+
+    window.addEventListener('online', aoFicarOnline)
+    document.addEventListener('visibilitychange', aoVoltarParaAba)
+
+    // Primeira conferência imediatamente.
+    atualizarPorConsulta()
+
+    return () => {
+      unsubPedidos()
+      clearInterval(intervalo)
+      window.removeEventListener('online', aoFicarOnline)
+      document.removeEventListener('visibilitychange', aoVoltarParaAba)
+    }
+  }, [postoImpressaoAtivo])
+
 
   const entrarNoSistema = () => {
     const nome = nomeEntrada.trim()
@@ -601,7 +646,8 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       tipo: item.premiumExecutivo ? 'premium-executivo' : 'normal',
       estoqueNome: nomeEstoque,
       observacaoCombo,
-      observacao: observacaoItem
+      observacao: observacaoItem,
+      enviadoCozinha: false
     }
 
     await salvarEstoque(novoEstoque)
@@ -688,7 +734,8 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       tipo: 'executivo',
       observacao: observacaoExecutivo.trim(),
       espetosInclusos: espetosExecutivo.map(e => e.nome),
-      detalhesEspetos: espetosExecutivo
+      detalhesEspetos: espetosExecutivo,
+      enviadoCozinha: false
     }
 
     await salvarEstoque(novoEstoque)
@@ -827,7 +874,8 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       detalhesEspetos: espetosCombo,
       componentesInclusos,
       observacaoCombo: upgrade ? 'Upgrade Batata Mestre + R$ 10,00' : '',
-      observacao: observacaoCombo.trim()
+      observacao: observacaoCombo.trim(),
+      enviadoCozinha: false
     }
 
     await salvarEstoque(novoEstoque)
@@ -892,7 +940,8 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       tipo: 'lanche',
       espetoEscolhido: espetoLanche.nome,
       espetosInclusos: [espetoLanche.nome],
-      observacao: observacaoLanche.trim()
+      observacao: observacaoLanche.trim(),
+      enviadoCozinha: false
     }
 
     await salvarEstoque(novoEstoque)
@@ -949,8 +998,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
     if (enviandoCozinha) return
 
     const todosItens = comandaAtual.itens || []
-    const jaEnviados = Number(comandaAtual.itensEnviadosCozinha || 0)
-    const novosItens = todosItens.slice(jaEnviados)
+    const novosItens = todosItens.filter(item => item.enviadoCozinha !== true)
 
     if (novosItens.length === 0) {
       return alert('Não há itens novos para enviar à cozinha.')
@@ -993,8 +1041,19 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
           criadoEm: serverTimestamp()
         })
 
+        const itensMarcados = todosItens.map(item => {
+          if (item.enviadoCozinha === true) return item
+
+          return {
+            ...item,
+            enviadoCozinha: true,
+            pedidoCozinhaNumero: numeroGerado
+          }
+        })
+
         transaction.update(doc(db, 'comandas', comandaAtual.id), {
-          itensEnviadosCozinha: todosItens.length,
+          itens: itensMarcados,
+          itensEnviadosCozinha: itensMarcados.filter(item => item.enviadoCozinha === true).length,
           ultimoPedidoCozinha: numeroGerado
         })
       })
@@ -1984,6 +2043,11 @@ MESTRE DO ESPETO PDV
               <small>
                 Ative somente no computador conectado por USB à POS-58.
               </small>
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
+                ☁️ Última sincronização: {ultimaSincronizacaoCozinha
+                  ? ultimaSincronizacaoCozinha.toLocaleTimeString('pt-BR')
+                  : 'aguardando...'}
+              </div>
             </div>
 
             {pedidosCozinha.length === 0 && (
