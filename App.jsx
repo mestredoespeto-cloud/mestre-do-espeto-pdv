@@ -4,6 +4,7 @@ import LoginScreen from './components/LoginScreen'
 import HeaderBar from './components/HeaderBar'
 import PainelCardapioComanda from './components/PainelCardapioComanda'
 import ItensComandaPanel from './components/ItensComandaPanel'
+import EstoqueProfissional from './components/EstoqueProfissional'
 import styles from './styles/styles'
 
 import {
@@ -222,6 +223,16 @@ export default function App() {
   const [dataRelatorio, setDataRelatorio] = useState(hoje())
   const [executivoSelecionado, setExecutivoSelecionado] = useState(null)
   const [espetosExecutivo, setEspetosExecutivo] = useState([])
+  const [baiaoExecutivo, setBaiaoExecutivo] = useState(false)
+  const [observacaoExecutivo, setObservacaoExecutivo] = useState('')
+  const [observacaoCombo, setObservacaoCombo] = useState('')
+  const [observacaoLanche, setObservacaoLanche] = useState('')
+  const [comboSelecionado, setComboSelecionado] = useState(null)
+  const [espetosCombo, setEspetosCombo] = useState([])
+  const [upgradeBatataCombo, setUpgradeBatataCombo] = useState(false)
+  const [refrigeranteFamilia, setRefrigeranteFamilia] = useState('Coca-Cola 1L')
+  const [lancheSelecionado, setLancheSelecionado] = useState(null)
+  const [espetoLanche, setEspetoLanche] = useState(null)
   const [cardapio, setCardapio] = useState(cardapioPadrao)
   const [itensCardapio, setItensCardapio] = useState([])
 
@@ -391,7 +402,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
   ;(comanda.itens || []).forEach(item => {
     totalVenda += Number(item.precoVenda ?? item.preco ?? 0)
 
-    if (item.tipo === 'executivo') {
+    if (item.tipo === 'executivo' || item.tipo === 'combo' || item.tipo === 'lanche') {
       const listaEspetos = item.detalhesEspetos && item.detalhesEspetos.length
         ? item.detalhesEspetos.map(e => e.nome)
         : (item.espetosInclusos || [])
@@ -413,6 +424,19 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
           totalRepasse += custo
         }
       })
+
+      if (item.tipo === 'combo') {
+        ;(item.componentesInclusos || []).forEach(comp => {
+          const qtd = Number(comp.qtd || 1)
+          const custoComp = Number(comp.precoCusto ?? custoProduto(comp.nome) ?? 0)
+          totalCusto += custoComp * qtd
+
+          if (tipo === 'Família' || tipo === 'Sócios') {
+            totalRepasse += custoComp * qtd
+          }
+        })
+      }
+
 
       return
     }
@@ -531,13 +555,32 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       [nomeEstoque]: (estoque[nomeEstoque] || 0) - 1
     }
 
+    let precoFinal = Number(item.preco ?? 0)
+    let observacaoCombo = ''
+
+    if (item.nome === 'Família Mestre') {
+      const upgrade = confirm(
+        'Combo Família Mestre\n\nDeseja upgrade para Batata Mestre por + R$ 10,00?'
+      )
+      if (upgrade) {
+        precoFinal += 10
+        observacaoCombo = 'Upgrade Batata Mestre + R$ 10,00'
+      }
+    }
+
+    const observacaoItem = prompt(
+      `Observação opcional para ${item.nome}:\nEx.: sem gelo, sem açúcar, sem vinagrete, sem cebola...`
+    ) || ''
+
     const itemVenda = {
       nome: item.nome,
-      preco: item.preco,
+      preco: precoFinal,
       precoCusto: Number(item.precoCusto ?? custoProduto(nomeEstoque)),
       categoria,
       tipo: item.premiumExecutivo ? 'premium-executivo' : 'normal',
-      estoqueNome: nomeEstoque
+      estoqueNome: nomeEstoque,
+      observacaoCombo,
+      observacao: observacaoItem
     }
 
     await salvarEstoque(novoEstoque)
@@ -554,6 +597,8 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
 
     setExecutivoSelecionado(item)
     setEspetosExecutivo([])
+    setBaiaoExecutivo(false)
+    setObservacaoExecutivo('')
 
     setTimeout(() => {
       document.getElementById('selecao-executivo')?.scrollIntoView({
@@ -608,15 +653,19 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
     }
 
     const adicionalPremium = espetosExecutivo.reduce((acc, e) => acc + (e.adicional || 0), 0)
-    const precoFinal = executivoSelecionado.preco + adicionalPremium
+    const adicionalBaiao = baiaoExecutivo ? 4 : 0
+    const precoFinal = executivoSelecionado.preco + adicionalPremium + adicionalBaiao
 
     const itemVenda = {
       nome: executivoSelecionado.nome,
       preco: precoFinal,
       precoBase: executivoSelecionado.preco,
       adicionalPremium,
+      adicionalBaiao,
+      acompanhamento: baiaoExecutivo ? 'Baião de Dois' : 'Arroz Branco',
       categoria: 'Executivos',
       tipo: 'executivo',
+      observacao: observacaoExecutivo.trim(),
       espetosInclusos: espetosExecutivo.map(e => e.nome),
       detalhesEspetos: espetosExecutivo
     }
@@ -629,6 +678,211 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
 
     setExecutivoSelecionado(null)
     setEspetosExecutivo([])
+    setBaiaoExecutivo(false)
+    setObservacaoExecutivo('')
+  }
+
+  const quantidadeEspetosCombo = (nomeCombo) => {
+    if (nomeCombo === 'Happy Mestre') return 2
+    if (nomeCombo === 'Almoço Mestre') return 2
+    if (nomeCombo === 'Família Mestre') return 8
+    return 0
+  }
+
+  const abrirSelecaoCombo = (item) => {
+    if (!comandaAtual) return alert('Selecione ou crie uma comanda.')
+
+    const qtd = quantidadeEspetosCombo(item.nome)
+    if (!qtd) return adicionarItem(item, 'Combos')
+
+    setComboSelecionado({ ...item, qtdEspetosCombo: qtd })
+    setEspetosCombo([])
+    setUpgradeBatataCombo(false)
+    setRefrigeranteFamilia('Coca-Cola 1L')
+    setObservacaoCombo('')
+
+    setTimeout(() => {
+      document.getElementById('selecao-combo')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      })
+    }, 100)
+  }
+
+  const adicionarEspetoCombo = (espeto) => {
+    if (!comboSelecionado) return
+
+    if (espetosCombo.length >= comboSelecionado.qtdEspetosCombo) {
+      return alert(`Este combo permite escolher ${comboSelecionado.qtdEspetosCombo} espetos tradicionais.`)
+    }
+
+    if ((estoque[espeto.nome] || 0) <= 0) {
+      tocarSom('/alerta.mp3')
+      return alert(`${espeto.nome} está sem estoque.`)
+    }
+
+    setEspetosCombo([...espetosCombo, {
+      nome: espeto.nome,
+      precoCusto: custoProduto(espeto.nome)
+    }])
+  }
+
+  const removerEspetoCombo = (index) => {
+    const nova = [...espetosCombo]
+    nova.splice(index, 1)
+    setEspetosCombo(nova)
+  }
+
+  const confirmarCombo = async () => {
+    if (!comboSelecionado) return
+
+    if (espetosCombo.length !== comboSelecionado.qtdEspetosCombo) {
+      return alert(`Selecione exatamente ${comboSelecionado.qtdEspetosCombo} espetos tradicionais.`)
+    }
+
+    const componentesInclusos = []
+
+    if (comboSelecionado.nome === 'Happy Mestre') {
+      componentesInclusos.push({
+        nome: 'Chopp Brahma 350ml',
+        qtd: 1,
+        precoCusto: custoProduto('Chopp Brahma 350ml')
+      })
+    }
+
+    if (comboSelecionado.nome === 'Almoço Mestre') {
+      componentesInclusos.push({
+        nome: 'Suco Natural Laranja 400ml',
+        qtd: 1,
+        precoCusto: custoProduto('Suco Natural Laranja 400ml')
+      })
+    }
+
+    if (comboSelecionado.nome === 'Família Mestre') {
+      componentesInclusos.push({
+        nome: upgradeBatataCombo ? 'Batata Mestre 700g' : 'Batata Cheddar e Bacon 600g',
+        qtd: 1,
+        precoCusto: custoProduto(
+          upgradeBatataCombo ? 'Batata Mestre 700g' : 'Batata Cheddar e Bacon 600g'
+        )
+      })
+
+      componentesInclusos.push({
+        nome: refrigeranteFamilia,
+        qtd: 1,
+        precoCusto: custoProduto(refrigeranteFamilia)
+      })
+    }
+
+    let novoEstoque = { ...estoque }
+
+    for (const espeto of espetosCombo) {
+      if ((novoEstoque[espeto.nome] || 0) <= 0) {
+        tocarSom('/alerta.mp3')
+        return alert(`${espeto.nome} está sem estoque.`)
+      }
+      novoEstoque[espeto.nome] -= 1
+    }
+
+    for (const componente of componentesInclusos) {
+      const atual = Number(novoEstoque[componente.nome] || 0)
+      if (atual < componente.qtd) {
+        tocarSom('/alerta.mp3')
+        return alert(`${componente.nome} está sem estoque suficiente para este combo.`)
+      }
+      novoEstoque[componente.nome] = atual - componente.qtd
+    }
+
+    const upgrade = comboSelecionado.nome === 'Família Mestre' && upgradeBatataCombo
+    const precoFinal = Number(comboSelecionado.preco ?? 0) + (upgrade ? 10 : 0)
+
+    const itemVenda = {
+      nome: comboSelecionado.nome,
+      preco: precoFinal,
+      precoBase: Number(comboSelecionado.preco ?? 0),
+      categoria: 'Combos',
+      tipo: 'combo',
+      espetosInclusos: espetosCombo.map(e => e.nome),
+      detalhesEspetos: espetosCombo,
+      componentesInclusos,
+      observacaoCombo: upgrade ? 'Upgrade Batata Mestre + R$ 10,00' : '',
+      observacao: observacaoCombo.trim()
+    }
+
+    await salvarEstoque(novoEstoque)
+    await atualizarComanda({
+      ...comandaAtual,
+      itens: [...(comandaAtual.itens || []), itemVenda]
+    })
+
+    setComboSelecionado(null)
+    setEspetosCombo([])
+    setUpgradeBatataCombo(false)
+    setRefrigeranteFamilia('Coca-Cola 1L')
+    setObservacaoCombo('')
+  }
+
+  const abrirSelecaoLanche = (item) => {
+    if (!comandaAtual) return alert('Selecione ou crie uma comanda.')
+
+    setLancheSelecionado(item)
+    setEspetoLanche(null)
+    setObservacaoLanche('')
+
+    setTimeout(() => {
+      document.getElementById('selecao-lanche')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      })
+    }, 100)
+  }
+
+  const selecionarEspetoLanche = (espeto) => {
+    if ((estoque[espeto.nome] || 0) <= 0) {
+      tocarSom('/alerta.mp3')
+      return alert(`${espeto.nome} está sem estoque.`)
+    }
+
+    setEspetoLanche({
+      nome: espeto.nome,
+      precoCusto: custoProduto(espeto.nome)
+    })
+  }
+
+  const confirmarLanche = async () => {
+    if (!lancheSelecionado) return
+    if (!espetoLanche) return alert('Escolha o espeto do lanche.')
+
+    if ((estoque[espetoLanche.nome] || 0) <= 0) {
+      tocarSom('/alerta.mp3')
+      return alert(`${espetoLanche.nome} está sem estoque.`)
+    }
+
+    const novoEstoque = {
+      ...estoque,
+      [espetoLanche.nome]: (estoque[espetoLanche.nome] || 0) - 1
+    }
+
+    const itemVenda = {
+      nome: lancheSelecionado.nome,
+      preco: Number(lancheSelecionado.preco ?? 0),
+      precoCusto: Number(espetoLanche.precoCusto ?? 0),
+      categoria: 'Lanche no Espeto',
+      tipo: 'lanche',
+      espetoEscolhido: espetoLanche.nome,
+      espetosInclusos: [espetoLanche.nome],
+      observacao: observacaoLanche.trim()
+    }
+
+    await salvarEstoque(novoEstoque)
+    await atualizarComanda({
+      ...comandaAtual,
+      itens: [...(comandaAtual.itens || []), itemVenda]
+    })
+
+    setLancheSelecionado(null)
+    setEspetoLanche(null)
+    setObservacaoLanche('')
   }
 
   const removerItem = async (index) => {
@@ -638,10 +892,16 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
 
     let novoEstoque = { ...estoque }
 
-    if (item.tipo === 'executivo') {
+    if (item.tipo === 'executivo' || item.tipo === 'combo' || item.tipo === 'lanche') {
       ;(item.espetosInclusos || []).forEach(e => {
         novoEstoque[e] = (novoEstoque[e] || 0) + 1
       })
+
+      if (item.tipo === 'combo') {
+        ;(item.componentesInclusos || []).forEach(comp => {
+          novoEstoque[comp.nome] = (novoEstoque[comp.nome] || 0) + Number(comp.qtd || 1)
+        })
+      }
     } else {
       const nomeEstoque = item.estoqueNome || item.nome
       novoEstoque[nomeEstoque] = (novoEstoque[nomeEstoque] || 0) + 1
@@ -673,9 +933,18 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
 
   const descricaoItem = (item) => {
     if (item.tipo === 'executivo') {
-      return `${item.nome} - R$ ${item.preco.toFixed(2)}\n  Espetos: ${item.espetosInclusos.join(', ')}${item.adicionalPremium ? `\n  Adicional premium: R$ ${item.adicionalPremium.toFixed(2)}` : ''}`
+      return `${item.nome} - R$ ${item.preco.toFixed(2)}\n  Espetos: ${item.espetosInclusos.join(', ')}\n  Acompanhamento: ${item.acompanhamento || 'Arroz Branco'}${item.adicionalBaiao ? ` (+ R$ ${item.adicionalBaiao.toFixed(2)})` : ''}${item.adicionalPremium ? `\n  Adicional premium: R$ ${item.adicionalPremium.toFixed(2)}` : ''}${item.observacao ? `\n  OBS: ${item.observacao}` : ''}`
     }
-    return `${item.nome} - R$ ${item.preco.toFixed(2)}`
+    if (item.tipo === 'combo') {
+      const comps = (item.componentesInclusos || [])
+        .map(c => `${Number(c.qtd || 1)}x ${c.nome}`)
+        .join(', ')
+      return `${item.nome} - R$ ${item.preco.toFixed(2)}\n  Espetos: ${(item.espetosInclusos || []).join(', ')}${comps ? `\n  Acompanha: ${comps}` : ''}${item.observacaoCombo ? `\n  ${item.observacaoCombo}` : ''}${item.observacao ? `\n  OBS: ${item.observacao}` : ''}`
+    }
+    if (item.tipo === 'lanche') {
+      return `${item.nome} - R$ ${item.preco.toFixed(2)}\n  Espeto escolhido: ${item.espetoEscolhido}${item.observacao ? `\n  OBS: ${item.observacao}` : ''}`
+    }
+    return `${item.nome} - R$ ${item.preco.toFixed(2)}${item.observacaoCombo ? `\n  ${item.observacaoCombo}` : ''}${item.observacao ? `\n  OBS: ${item.observacao}` : ''}`
   }
 
   const imprimirCozinha = () => {
@@ -689,8 +958,14 @@ Cliente/Mesa: ${comandaAtual.cliente}
 Atendente: ${comandaAtual.atendente}
 ------------------------
 ${(comandaAtual.itens || []).map(i => {
-  if (i.tipo === 'executivo') {
-    return `${i.nome}\n  Espetos: ${i.espetosInclusos.join(', ')}`
+  if (i.tipo === 'executivo' || i.tipo === 'combo') {
+    const comps = (i.componentesInclusos || [])
+      .map(c => `${Number(c.qtd || 1)}x ${c.nome}`)
+      .join(', ')
+    return `${i.nome}\n  Espetos: ${(i.espetosInclusos || []).join(', ')}${comps ? `\n  Acompanha: ${comps}` : ''}${i.observacaoCombo ? `\n  ${i.observacaoCombo}` : ''}${i.observacao ? `\n  OBS: ${i.observacao}` : ''}`
+  }
+  if (i.tipo === 'lanche') {
+    return `${i.nome}\n  Espeto escolhido: ${i.espetoEscolhido}${i.observacao ? `\n  OBS: ${i.observacao}` : ''}`
   }
   return i.nome
 }).join('\n')}
@@ -780,10 +1055,15 @@ const excluirComandaAberta = async () => {
 
     vendas.forEach(c => {
       ;(c.itens || []).forEach(item => {
-        if (item.tipo === 'executivo') {
+        if (item.tipo === 'executivo' || item.tipo === 'combo' || item.tipo === 'lanche') {
           ;(item.espetosInclusos || []).forEach(nome => {
             saidas[nome] = (saidas[nome] || 0) + 1
           })
+          if (item.tipo === 'combo') {
+            ;(item.componentesInclusos || []).forEach(comp => {
+              saidas[comp.nome] = (saidas[comp.nome] || 0) + Number(comp.qtd || 1)
+            })
+          }
         } else {
           const nome = item.estoqueNome || item.nome
           saidas[nome] = (saidas[nome] || 0) + 1
@@ -1318,7 +1598,7 @@ MESTRE DO ESPETO PDV
 
       {executivoSelecionado && (
         <div id="selecao-executivo" style={styles.cardDestaque}>
-          <h2>{executivoSelecionado.nome}</h2>
+          <h2>🍽️ Monte seu Prato — {executivoSelecionado.nome}</h2>
           <p>Selecione {executivoSelecionado.qtdEspetos} espetos. Pode repetir o mesmo espeto.</p>
           <p>Espeto premium no prato: adicional de R$ 5,00.</p>
 
@@ -1345,8 +1625,236 @@ MESTRE DO ESPETO PDV
             ))}
           </div>
 
-          <button onClick={confirmarExecutivo} style={styles.green}>✅ Confirmar Executivo</button>
+                    <div style={{
+            background: '#2b2b2b',
+            border: '1px solid #666',
+            borderRadius: 10,
+            padding: 12,
+            marginTop: 14,
+            marginBottom: 14
+          }}>
+            <h3>🍚 Escolha o acompanhamento</h3>
+            <label style={{ display: 'block', marginBottom: 10, cursor: 'pointer' }}>
+              <input
+                type="radio"
+                name="acompanhamentoExecutivo"
+                checked={!baiaoExecutivo}
+                onChange={() => setBaiaoExecutivo(false)}
+                style={{ marginRight: 8 }}
+              />
+              Arroz Branco — incluso
+            </label>
+            <label style={{ display: 'block', cursor: 'pointer', fontWeight: 'bold' }}>
+              <input
+                type="radio"
+                name="acompanhamentoExecutivo"
+                checked={baiaoExecutivo}
+                onChange={() => setBaiaoExecutivo(true)}
+                style={{ marginRight: 8 }}
+              />
+              Baião de Dois — + R$ 4,00
+            </label>
+          </div>
+
+          <h3>
+            Total do prato: R$ {(Number(executivoSelecionado.preco ?? 0) +
+              espetosExecutivo.reduce((acc, e) => acc + (e.adicional || 0), 0) +
+              (baiaoExecutivo ? 4 : 0)
+            ).toFixed(2)}
+          </h3>
+
+          <div style={{ marginTop: 12, marginBottom: 12 }}>
+            <label><strong>📝 Observação do prato</strong></label>
+            <textarea
+              placeholder="Ex.: sem vinagrete, sem farofa, sem cebola..."
+              value={observacaoExecutivo}
+              onChange={e => setObservacaoExecutivo(e.target.value)}
+              style={{ ...styles.input, minHeight: 70 }}
+            />
+          </div>
+
+<button onClick={confirmarExecutivo} style={styles.green}>✅ Confirmar Executivo</button>
           <button onClick={() => setExecutivoSelecionado(null)} style={styles.red}>Cancelar</button>
+        </div>
+      )}
+
+      {comboSelecionado && (
+        <div id="selecao-combo" style={styles.cardDestaque}>
+          <h2>🎁 {comboSelecionado.nome}</h2>
+          <p>
+            Escolha {comboSelecionado.qtdEspetosCombo} espetos tradicionais.
+            Pode repetir o mesmo espeto.
+          </p>
+
+          <h3>Selecionados: {espetosCombo.length}/{comboSelecionado.qtdEspetosCombo}</h3>
+
+          {espetosCombo.length === 0 && <p>Nenhum espeto selecionado.</p>}
+
+          {espetosCombo.map((e, index) => (
+            <div key={index} style={styles.itemLinha}>
+              <span>{index + 1}. {e.nome}</span>
+              <button onClick={() => removerEspetoCombo(index)}>❌</button>
+            </div>
+          ))}
+
+          <div style={styles.grid}>
+            {(cardapio.Espetos || []).map(e => (
+              <button
+                key={e.id || e.nome}
+                onClick={() => adicionarEspetoCombo(e)}
+                style={styles.itemBtn}
+              >
+                <strong>{e.nome}</strong><br />
+                Tradicional<br />
+                Estoque: {estoque[e.nome] || 0}
+              </button>
+            ))}
+          </div>
+
+          {comboSelecionado.nome === 'Família Mestre' && (
+            <div style={{
+              background: '#3b2600',
+              border: '1px solid #ffb300',
+              borderRadius: 10,
+              padding: 12,
+              marginTop: 12,
+              marginBottom: 12
+            }}>
+              <label style={{ cursor: 'pointer', fontWeight: 'bold' }}>
+                <input
+                  type="checkbox"
+                  checked={upgradeBatataCombo}
+                  onChange={e => setUpgradeBatataCombo(e.target.checked)}
+                  style={{ marginRight: 8 }}
+                />
+                🍟 Upgrade para Batata Mestre + R$ 10,00
+              </label>
+            </div>
+          )}
+
+          <h3>
+            Total do combo: R$ {(Number(comboSelecionado.preco ?? 0) +
+              (comboSelecionado.nome === 'Família Mestre' && upgradeBatataCombo ? 10 : 0)
+            ).toFixed(2)}
+          </h3>
+
+                    <div style={{ marginTop: 12, marginBottom: 12 }}>
+            <label><strong>📝 Observação do combo</strong></label>
+            <textarea
+              placeholder="Ex.: sem gelo, refrigerante sem gelo, retirar algum item..."
+              value={observacaoCombo}
+              onChange={e => setObservacaoCombo(e.target.value)}
+              style={{ ...styles.input, minHeight: 70 }}
+            />
+          </div>
+
+          <div style={{
+            background: '#222',
+            border: '1px solid #555',
+            borderRadius: 10,
+            padding: 12,
+            marginTop: 12,
+            marginBottom: 12
+          }}>
+            <h3>📦 Itens incluídos automaticamente</h3>
+
+            {comboSelecionado.nome === 'Happy Mestre' && (
+              <p>🍺 1x Chopp Brahma 350ml</p>
+            )}
+
+            {comboSelecionado.nome === 'Almoço Mestre' && (
+              <p>🍊 1x Suco Natural Laranja 400ml</p>
+            )}
+
+            {comboSelecionado.nome === 'Família Mestre' && (
+              <>
+                <p>
+                  🍟 1x {upgradeBatataCombo ? 'Batata Mestre 700g' : 'Batata Cheddar e Bacon 600g'}
+                </p>
+
+                <label><strong>🥤 Refrigerante 1L incluído</strong></label>
+                <select
+                  value={refrigeranteFamilia}
+                  onChange={e => setRefrigeranteFamilia(e.target.value)}
+                  style={styles.input}
+                >
+                  <option value="Coca-Cola 1L">Coca-Cola 1L</option>
+                  <option value="Coca-Cola Zero 1L">Coca-Cola Zero 1L</option>
+                  <option value="Guaraná 1L">Guaraná 1L</option>
+                  <option value="Guaraná Zero 1L">Guaraná Zero 1L</option>
+                </select>
+              </>
+            )}
+          </div>
+
+<button onClick={confirmarCombo} style={styles.green}>
+            ✅ Confirmar Combo
+          </button>
+          <button
+            onClick={() => {
+              setComboSelecionado(null)
+              setEspetosCombo([])
+              setUpgradeBatataCombo(false)
+            }}
+            style={styles.red}
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
+
+      {lancheSelecionado && (
+        <div id="selecao-lanche" style={styles.cardDestaque}>
+          <h2>🥖 Lanche no Espeto</h2>
+          <p>Escolha 1 espeto tradicional para montar o lanche.</p>
+
+          {espetoLanche && (
+            <div style={styles.box}>
+              <strong>Selecionado:</strong> {espetoLanche.nome}
+            </div>
+          )}
+
+          <div style={styles.grid}>
+            {(cardapio.Espetos || []).map(e => (
+              <button
+                key={e.id || e.nome}
+                onClick={() => selecionarEspetoLanche(e)}
+                style={{
+                  ...styles.itemBtn,
+                  border: espetoLanche?.nome === e.nome ? '2px solid #ffb300' : 'none'
+                }}
+              >
+                <strong>{e.nome}</strong><br />
+                Tradicional<br />
+                Estoque: {estoque[e.nome] || 0}
+              </button>
+            ))}
+          </div>
+
+          <h3>Preço do lanche: R$ {Number(lancheSelecionado.preco ?? 0).toFixed(2)}</h3>
+
+                    <div style={{ marginTop: 12, marginBottom: 12 }}>
+            <label><strong>📝 Observação do lanche</strong></label>
+            <textarea
+              placeholder="Ex.: sem vinagrete, sem molho de alho..."
+              value={observacaoLanche}
+              onChange={e => setObservacaoLanche(e.target.value)}
+              style={{ ...styles.input, minHeight: 70 }}
+            />
+          </div>
+
+<button onClick={confirmarLanche} style={styles.green}>
+            ✅ Confirmar Lanche
+          </button>
+          <button
+            onClick={() => {
+              setLancheSelecionado(null)
+              setEspetoLanche(null)
+            }}
+            style={styles.red}
+          >
+            Cancelar
+          </button>
         </div>
       )}
 
@@ -1360,6 +1868,8 @@ MESTRE DO ESPETO PDV
             estoque={estoque}
             adicionarItem={adicionarItem}
             abrirSelecaoExecutivo={abrirSelecaoExecutivo}
+            abrirSelecaoCombo={abrirSelecaoCombo}
+            abrirSelecaoLanche={abrirSelecaoLanche}
           />
 
           <ItensComandaPanel
@@ -1512,49 +2022,24 @@ MESTRE DO ESPETO PDV
 )}
 
 {adminLiberado && (
-<div style={styles.card}>
-  <button
-    onClick={() => setMostrarEstoque(!mostrarEstoque)}
-    style={styles.yellow}
-  >
-    📦 {mostrarEstoque ? 'Ocultar Estoque' : 'Abrir Estoque'}
-  </button>
+  <div style={styles.card}>
+    <button
+      onClick={() => setMostrarEstoque(!mostrarEstoque)}
+      style={styles.yellow}
+    >
+      📦 {mostrarEstoque ? 'Ocultar Estoque' : 'Abrir Estoque'}
+    </button>
 
-  {mostrarEstoque && (
-    <>
-      <h2>Conferência de Estoque</h2>
-
-      {rel.conferenciaEstoque.map(i => (
-        <div key={i.produto} style={styles.box}>
-          <strong>{i.produto}</strong>
-
-          <p>
-            Inicial: {i.inicial} |
-            Saída: {i.saida} |
-            Esperado: {i.esperado} |
-            Real: {i.real}
-          </p>
-
-          <p>
-            Diferença: {i.diferenca} |
-            Perda estimada: R$ {i.valorDiferenca.toFixed(2)}
-          </p>
-        </div>
-      ))}
-
-      <h2>Estoque em Tempo Real</h2>
-
-      {Object.keys(estoque).map(prod => (
-        <p key={prod}>
-          {prod}: {estoque[prod]} un.
-          {estoque[prod] <= 5 && <b style={{ color: 'red' }}> ⚠️ baixo</b>}
-          <button onClick={() => reporEstoque(prod)} style={styles.repor}>Repor</button>
-          <button onClick={() => definirEstoque(prod)} style={styles.repor}>Ajustar</button>
-        </p>
-      ))}
-    </>
-  )}
-</div>
+    {mostrarEstoque && (
+      <EstoqueProfissional
+        estoque={estoque}
+        itensCardapio={itensCardapio}
+        conferenciaEstoque={rel.conferenciaEstoque}
+        reporEstoque={reporEstoque}
+        definirEstoque={definirEstoque}
+      />
+    )}
+  </div>
 )}
 
     </div>

@@ -19,7 +19,7 @@ export default function ItensComandaPanel({
 
     itens.forEach((item, index) => {
       // Executivos permanecem separados porque podem ter espetos diferentes.
-      if (item.tipo === 'executivo') {
+      if (item.tipo === 'executivo' || item.tipo === 'combo' || item.tipo === 'lanche') {
         agrupados.push({
           chave: `executivo-${index}`,
           item,
@@ -33,7 +33,10 @@ export default function ItensComandaPanel({
       const chave = [
         item.nome,
         item.categoria || '',
-        item.estoqueNome || ''
+        item.estoqueNome || '',
+        item.observacaoCombo || '',
+        Number(item.precoVenda ?? item.preco ?? 0),
+        item.observacao || ''
       ].join('|')
 
       if (!mapa.has(chave)) {
@@ -78,10 +81,17 @@ export default function ItensComandaPanel({
     if (linha.executivo) {
       const produto = localizarProdutoCardapio(linha.item)
 
-      if (produto) {
-        abrirSelecaoExecutivo(produto)
+      if (!produto) {
+        alert('Não foi possível localizar este item no cardápio.')
+        return
+      }
+
+      if (linha.item.tipo === 'combo') {
+        alert('Para adicionar outro combo, selecione-o novamente na categoria Combos.')
+      } else if (linha.item.tipo === 'lanche') {
+        alert('Para adicionar outro lanche, selecione-o novamente na categoria Lanche.')
       } else {
-        alert('Não foi possível localizar este executivo no cardápio.')
+        abrirSelecaoExecutivo(produto)
       }
       return
     }
@@ -164,15 +174,41 @@ export default function ItensComandaPanel({
                   )}
                 </div>
 
+                {item.observacaoCombo && (
+                  <small style={{ display: 'block', marginTop: 5, color: '#ffd166' }}>
+                    🍟 {item.observacaoCombo}
+                  </small>
+                )}
+
+                {item.tipo === 'combo' && (item.componentesInclusos || []).length > 0 && (
+                  <small style={{ display: 'block', marginTop: 6, color: '#a5d6a7' }}>
+                    📦 Acompanha: {(item.componentesInclusos || [])
+                      .map(c => `${Number(c.qtd || 1)}x ${c.nome}`)
+                      .join(', ')}
+                  </small>
+                )}
+
                 {adminLiberado && tipoAtual !== 'Cliente' && (
                   <small style={{ display: 'block', marginTop: 5, color: '#ffd166' }}>
                     Custo unitário: R$ {custoUnitario.toFixed(2)}
                   </small>
                 )}
 
-                {linha.executivo && (
+                {linha.executivo && item.tipo !== 'lanche' && (
                   <small style={{ display: 'block', marginTop: 6, color: '#bbb' }}>
                     Espetos: {(item.espetosInclusos || []).join(', ')}
+                  </small>
+                )}
+
+                {item.tipo === 'lanche' && (
+                  <small style={{ display: 'block', marginTop: 6, color: '#bbb' }}>
+                    Espeto escolhido: {item.espetoEscolhido}
+                  </small>
+                )}
+
+                {item.observacao && (
+                  <small style={{ display: 'block', marginTop: 6, color: '#ffd166' }}>
+                    📝 OBS: {item.observacao}
                   </small>
                 )}
               </div>
@@ -216,7 +252,7 @@ export default function ItensComandaPanel({
 
                 <button
                   onClick={() => aumentar(linha)}
-                  title={linha.executivo ? 'Adicionar outro executivo' : 'Adicionar uma unidade'}
+                  title={linha.item.tipo === 'combo' ? 'Selecione o combo novamente na categoria Combos' : (linha.executivo ? 'Adicionar outro executivo' : 'Adicionar uma unidade')}
                   style={{
                     width: 38,
                     height: 38,

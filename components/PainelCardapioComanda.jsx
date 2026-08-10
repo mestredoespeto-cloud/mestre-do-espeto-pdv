@@ -3,9 +3,9 @@ import styles from '../styles/styles'
 
 const nomeCurtoCategoria = (categoria) => {
   const mapa = {
-    Espetos: '🍢 Tradicionais',
-    'Espetos Premium Avulso': '⭐ Premium',
-    Executivos: '🍽️ Executivos',
+    Espetos: '🍢 Espetos Tradicionais',
+    'Espetos Premium Avulso': '⭐ Espetos Premium',
+    Executivos: '🍽️ Monte seu Prato',
     Adicionais: '➕ Adicionais',
     Bebidas: '🥤 Bebidas',
     Porções: '🍟 Porções',
@@ -20,7 +20,9 @@ export default function PainelCardapioComanda({
   cardapio,
   estoque,
   adicionarItem,
-  abrirSelecaoExecutivo
+  abrirSelecaoExecutivo,
+  abrirSelecaoCombo,
+  abrirSelecaoLanche
 }) {
   const categorias = useMemo(() => Object.keys(cardapio || {}), [cardapio])
   const [categoriaAtiva, setCategoriaAtiva] = useState(categorias[0] || '')
@@ -94,23 +96,24 @@ export default function PainelCardapioComanda({
               return (
                 <button
                   key={item.id || item.nome}
-                  onClick={() =>
-                    ehExecutivo
-                      ? abrirSelecaoExecutivo(item)
-                      : adicionarItem(item, categoriaAtiva)
-                  }
-                  disabled={!ehExecutivo && semEstoque}
+                  onClick={() => {
+                    if (ehExecutivo) return abrirSelecaoExecutivo(item)
+                    if (categoriaAtiva === 'Combos') return abrirSelecaoCombo(item)
+                    if (categoriaAtiva === 'Lanche no Espeto') return abrirSelecaoLanche(item)
+                    return adicionarItem(item, categoriaAtiva)
+                  }}
+                  disabled={!ehExecutivo && categoriaAtiva !== 'Combos' && categoriaAtiva !== 'Lanche no Espeto' && semEstoque}
                   style={{
                     ...(ehExecutivo ? styles.execBtn : styles.itemBtn),
-                    opacity: !ehExecutivo && semEstoque ? 0.45 : 1,
-                    cursor: !ehExecutivo && semEstoque ? 'not-allowed' : 'pointer'
+                    opacity: !ehExecutivo && categoriaAtiva !== 'Combos' && categoriaAtiva !== 'Lanche no Espeto' && semEstoque ? 0.45 : 1,
+                    cursor: !ehExecutivo && categoriaAtiva !== 'Combos' && categoriaAtiva !== 'Lanche no Espeto' && semEstoque ? 'not-allowed' : 'pointer'
                   }}
                 >
                   <strong>{item.nome}</strong>
                   <br />
                   R$ {Number(item.preco ?? 0).toFixed(2)}
 
-                  {!ehExecutivo && (
+                  {!ehExecutivo && categoriaAtiva !== 'Combos' && categoriaAtiva !== 'Lanche no Espeto' && (
                     <small
                       style={{
                         display: 'block',
