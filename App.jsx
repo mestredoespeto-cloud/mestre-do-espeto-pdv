@@ -244,6 +244,7 @@ export default function App() {
   )
   const [pedidoEmImpressao, setPedidoEmImpressao] = useState(null)
   const [ultimaSincronizacaoCozinha, setUltimaSincronizacaoCozinha] = useState(null)
+  const [agoraCozinha, setAgoraCozinha] = useState(Date.now())
 
   const [mostrarGestaoCardapio, setMostrarGestaoCardapio] = useState(false)
   const [mostrarEstoque, setMostrarEstoque] = useState(false)
@@ -253,6 +254,11 @@ export default function App() {
 
   useEffect(() => {
     setTimeout(() => setLoading(false), 1000)
+  }, [])
+
+  useEffect(() => {
+    const timer = setInterval(() => setAgoraCozinha(Date.now()), 30000)
+    return () => clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -1130,6 +1136,36 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
     if (status === 'pronto') return '🟢 Pronto'
     if (status === 'entregue') return '✅ Entregue'
     return '🟡 Novo'
+  }
+
+  const minutosDesdePedido = pedido => {
+    if (!pedido?.criadoEmISO) return 0
+    const inicio = new Date(pedido.criadoEmISO).getTime()
+    if (!Number.isFinite(inicio)) return 0
+    return Math.max(0, Math.floor((agoraCozinha - inicio) / 60000))
+  }
+
+  const nivelTempoPedido = pedido => {
+    const minutos = minutosDesdePedido(pedido)
+    if (pedido.status === 'pronto') return 'pronto'
+    if (minutos >= 20) return 'atrasado'
+    if (minutos >= 10) return 'atencao'
+    return 'normal'
+  }
+
+  const corPedidoCozinha = pedido => {
+    const nivel = nivelTempoPedido(pedido)
+    if (nivel === 'pronto') return '#22c55e'
+    if (nivel === 'atrasado') return '#ef4444'
+    if (nivel === 'atencao') return '#f59e0b'
+    if (pedido.status === 'preparo') return '#f97316'
+    return '#ffb300'
+  }
+
+  const textoTempoPedido = pedido => {
+    const minutos = minutosDesdePedido(pedido)
+    if (minutos === 0) return 'agora'
+    return `há ${minutos} min`
   }
 
   const resumoItemCozinha = item => {
@@ -2055,131 +2091,266 @@ MESTRE DO ESPETO PDV
       <div style={styles.card}>
         <button
           onClick={() => setMostrarFilaCozinha(!mostrarFilaCozinha)}
-          style={styles.yellow}
+          style={{
+            ...styles.yellow,
+            fontSize: 18,
+            fontWeight: 900,
+            padding: '15px 18px'
+          }}
         >
           👨‍🍳 Fila da Cozinha ({pedidosCozinha.length})
         </button>
 
         {mostrarFilaCozinha && (
-          <div style={{ marginTop: 12 }}>
-            <h2>🔥 Fila da Cozinha — ordem de chegada</h2>
-
+          <div style={{ marginTop: 14 }}>
             <div style={{
-              padding: 10,
-              marginBottom: 12,
-              background: postoImpressaoAtivo ? '#17351f' : '#333',
-              borderRadius: 8
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap'
             }}>
-              <strong>
-                Impressão automática: {postoImpressaoAtivo ? '🟢 ATIVA' : '⚪ DESATIVADA'}
-              </strong>
-              <div style={{ marginTop: 8 }}>
-                <button
-                  onClick={() => {
-                    const novo = !postoImpressaoAtivo
-                    setPostoImpressaoAtivo(novo)
-                    localStorage.setItem('mestre_posto_impressao', novo ? '1' : '0')
-                  }}
-                  style={postoImpressaoAtivo ? styles.red : styles.green}
-                >
-                  {postoImpressaoAtivo ? '⏹ Desativar posto de impressão' : '🖨️ Ativar este computador como impressora'}
-                </button>
-              </div>
-              <small>
-                Ative somente no computador conectado por USB à POS-58.
-              </small>
-              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-                ☁️ Última sincronização: {ultimaSincronizacaoCozinha
+              <h2 style={{ margin: 0 }}>🔥 Painel da Cozinha — ordem de chegada</h2>
+              <div style={{ fontSize: 13, opacity: 0.85 }}>
+                ☁️ Atualizado: {ultimaSincronizacaoCozinha
                   ? ultimaSincronizacaoCozinha.toLocaleTimeString('pt-BR')
                   : 'aguardando...'}
               </div>
             </div>
 
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+              gap: 8,
+              margin: '12px 0'
+            }}>
+              <div style={{ background: '#3a3000', padding: 10, borderRadius: 8, textAlign: 'center' }}>
+                <strong style={{ fontSize: 22 }}>
+                  {pedidosCozinha.filter(p => p.status === 'novo').length}
+                </strong>
+                <div>🟡 Novos</div>
+              </div>
+
+              <div style={{ background: '#3b1f0b', padding: 10, borderRadius: 8, textAlign: 'center' }}>
+                <strong style={{ fontSize: 22 }}>
+                  {pedidosCozinha.filter(p => p.status === 'preparo').length}
+                </strong>
+                <div>🔥 Em preparo</div>
+              </div>
+
+              <div style={{ background: '#12351e', padding: 10, borderRadius: 8, textAlign: 'center' }}>
+                <strong style={{ fontSize: 22 }}>
+                  {pedidosCozinha.filter(p => p.status === 'pronto').length}
+                </strong>
+                <div>🟢 Prontos</div>
+              </div>
+
+              <div style={{ background: '#401414', padding: 10, borderRadius: 8, textAlign: 'center' }}>
+                <strong style={{ fontSize: 22 }}>
+                  {pedidosCozinha.filter(p => minutosDesdePedido(p) >= 20 && p.status !== 'pronto').length}
+                </strong>
+                <div>⏱️ +20 min</div>
+              </div>
+            </div>
+
+            <div style={{
+              padding: 10,
+              marginBottom: 12,
+              background: postoImpressaoAtivo ? '#3b1b1b' : '#17351f',
+              borderRadius: 8,
+              border: postoImpressaoAtivo ? '1px solid #ef4444' : '1px solid #22c55e'
+            }}>
+              <strong>Agente Windows: use esta forma para impressão automática.</strong>
+              <div style={{ marginTop: 4, fontSize: 13 }}>
+                Posto de impressão do navegador: {postoImpressaoAtivo ? '🔴 ATIVO — desative para evitar duplicidade' : '✅ DESATIVADO'}
+              </div>
+
+              {postoImpressaoAtivo && (
+                <button
+                  onClick={() => {
+                    setPostoImpressaoAtivo(false)
+                    localStorage.setItem('mestre_posto_impressao', '0')
+                  }}
+                  style={{ ...styles.red, marginTop: 8 }}
+                >
+                  ⏹ Desativar impressão pelo navegador
+                </button>
+              )}
+            </div>
+
             {pedidosCozinha.length === 0 && (
-              <p>Nenhum pedido aguardando hoje.</p>
+              <div style={{
+                textAlign: 'center',
+                padding: 24,
+                background: '#1f1f1f',
+                borderRadius: 10
+              }}>
+                ✅ Nenhum pedido aguardando.
+              </div>
             )}
 
-            {pedidosCozinha.map(pedido => (
-              <div
-                key={pedido.id}
-                style={{
-                  background: '#222',
-                  border: pedido.status === 'pronto'
-                    ? '2px solid #22c55e'
-                    : pedido.status === 'preparo'
-                      ? '2px solid #f97316'
-                      : '2px solid #ffb300',
-                  borderRadius: 10,
-                  padding: 12,
-                  marginBottom: 12
-                }}
-              >
-                <h2 style={{ margin: '0 0 6px 0' }}>
-                  Pedido nº {String(pedido.numero || 0).padStart(4, '0')}
-                </h2>
-                <strong>{pedido.cliente}</strong>
-                <div>Atendente: {pedido.atendente || '-'}</div>
-                <div>Status: {rotuloStatusCozinha(pedido.status)}</div>
+            {pedidosCozinha.map(pedido => {
+              const minutos = minutosDesdePedido(pedido)
+              const nivelTempo = nivelTempoPedido(pedido)
+              const cor = corPedidoCozinha(pedido)
 
-                <div style={{ marginTop: 10 }}>
-                  {(pedido.itens || []).map((item, index) => (
-                    <div
-                      key={index}
+              return (
+                <div
+                  key={pedido.id}
+                  style={{
+                    background: '#202020',
+                    border: `3px solid ${cor}`,
+                    borderRadius: 12,
+                    padding: 14,
+                    marginBottom: 12,
+                    boxShadow: nivelTempo === 'atrasado'
+                      ? '0 0 0 2px rgba(239,68,68,0.18)'
+                      : 'none'
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    flexWrap: 'wrap'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 25, fontWeight: 900 }}>
+                        #{String(pedido.numero || 0).padStart(4, '0')} — {pedido.cliente || 'Sem referência'}
+                      </div>
+                      <div style={{ marginTop: 4, fontSize: 14 }}>
+                        Atendente: <strong>{pedido.atendente || '-'}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{
+                      background: cor,
+                      color: nivelTempo === 'atencao' ? '#111' : '#fff',
+                      borderRadius: 10,
+                      padding: '8px 12px',
+                      textAlign: 'center',
+                      minWidth: 120,
+                      fontWeight: 900
+                    }}>
+                      <div style={{ fontSize: 16 }}>{rotuloStatusCozinha(pedido.status)}</div>
+                      <div style={{ fontSize: 20 }}>{textoTempoPedido(pedido)}</div>
+                    </div>
+                  </div>
+
+                  {nivelTempo === 'atrasado' && pedido.status !== 'pronto' && (
+                    <div style={{
+                      marginTop: 10,
+                      background: '#541919',
+                      border: '1px solid #ef4444',
+                      borderRadius: 8,
+                      padding: 8,
+                      fontWeight: 900
+                    }}>
+                      🚨 ATENÇÃO: pedido aguardando há {minutos} minutos.
+                    </div>
+                  )}
+
+                  {nivelTempo === 'atencao' && pedido.status !== 'pronto' && (
+                    <div style={{
+                      marginTop: 10,
+                      background: '#493609',
+                      border: '1px solid #f59e0b',
+                      borderRadius: 8,
+                      padding: 8,
+                      fontWeight: 800
+                    }}>
+                      ⏱️ Pedido entrando em tempo de atenção.
+                    </div>
+                  )}
+
+                  <div style={{ marginTop: 12 }}>
+                    {(pedido.itens || []).map((item, index) => (
+                      <div
+                        key={item.cozinhaItemId || index}
+                        style={{
+                          padding: '10px 0',
+                          borderTop: index ? '1px solid #494949' : 'none',
+                          fontSize: 17,
+                          lineHeight: 1.35
+                        }}
+                      >
+                        <strong>{index + 1}.</strong> {resumoItemCozinha(item)}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
+                    Impressão: {pedido.statusImpressao === 'impresso'
+                      ? '✅ Impresso'
+                      : pedido.statusImpressao === 'imprimindo'
+                        ? '🖨️ Imprimindo'
+                        : '⏳ Aguardando'}
+                  </div>
+
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                    gap: 9,
+                    marginTop: 12
+                  }}>
+                    <button
+                      onClick={() => imprimirPedidoFilaManual(pedido)}
                       style={{
-                        padding: '7px 0',
-                        borderTop: index ? '1px solid #444' : 'none'
+                        ...styles.smallBtn,
+                        minHeight: 50,
+                        fontSize: 15,
+                        fontWeight: 800
                       }}
                     >
-                      {index + 1}. {resumoItemCozinha(item)}
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: 8, fontSize: 13 }}>
-                  Impressão: {pedido.statusImpressao === 'impresso'
-                    ? '✅ Impresso'
-                    : pedido.statusImpressao === 'imprimindo'
-                      ? '🖨️ Imprimindo'
-                      : '⏳ Aguardando'}
-                </div>
-
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
-                  <button
-                    onClick={() => imprimirPedidoFilaManual(pedido)}
-                    style={styles.smallBtn}
-                  >
-                    🖨️ Reimprimir
-                  </button>
-
-                  {pedido.status === 'novo' && (
-                    <button
-                      onClick={() => atualizarStatusPedidoCozinha(pedido, 'preparo')}
-                      style={styles.yellow}
-                    >
-                      🔥 Iniciar preparo
+                      🖨️ Reimprimir
                     </button>
-                  )}
 
-                  {pedido.status === 'preparo' && (
-                    <button
-                      onClick={() => atualizarStatusPedidoCozinha(pedido, 'pronto')}
-                      style={styles.green}
-                    >
-                      🟢 Marcar pronto
-                    </button>
-                  )}
+                    {pedido.status === 'novo' && (
+                      <button
+                        onClick={() => atualizarStatusPedidoCozinha(pedido, 'preparo')}
+                        style={{
+                          ...styles.yellow,
+                          minHeight: 54,
+                          fontSize: 17,
+                          fontWeight: 900
+                        }}
+                      >
+                        🔥 INICIAR PREPARO
+                      </button>
+                    )}
 
-                  {pedido.status === 'pronto' && (
-                    <button
-                      onClick={() => atualizarStatusPedidoCozinha(pedido, 'entregue')}
-                      style={styles.green}
-                    >
-                      ✅ Entregue
-                    </button>
-                  )}
+                    {pedido.status === 'preparo' && (
+                      <button
+                        onClick={() => atualizarStatusPedidoCozinha(pedido, 'pronto')}
+                        style={{
+                          ...styles.green,
+                          minHeight: 58,
+                          fontSize: 18,
+                          fontWeight: 900
+                        }}
+                      >
+                        🟢 PEDIDO PRONTO
+                      </button>
+                    )}
+
+                    {pedido.status === 'pronto' && (
+                      <button
+                        onClick={() => atualizarStatusPedidoCozinha(pedido, 'entregue')}
+                        style={{
+                          ...styles.green,
+                          minHeight: 58,
+                          fontSize: 18,
+                          fontWeight: 900
+                        }}
+                      >
+                        ✅ MARCAR ENTREGUE
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
