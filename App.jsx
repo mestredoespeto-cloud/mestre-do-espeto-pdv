@@ -245,6 +245,10 @@ export default function App() {
   const [pedidoEmImpressao, setPedidoEmImpressao] = useState(null)
   const [ultimaSincronizacaoCozinha, setUltimaSincronizacaoCozinha] = useState(null)
   const [agoraCozinha, setAgoraCozinha] = useState(Date.now())
+  const [alertasPedidosProntos, setAlertasPedidosProntos] = useState([])
+  const [audioAlertasLiberado, setAudioAlertasLiberado] = useState(
+    localStorage.getItem('mestre_audio_alertas') === '1'
+  )
 
   const [mostrarGestaoCardapio, setMostrarGestaoCardapio] = useState(false)
   const [mostrarEstoque, setMostrarEstoque] = useState(false)
@@ -381,6 +385,70 @@ export default function App() {
       document.removeEventListener('visibilitychange', aoVoltarParaAba)
     }
   }, [postoImpressaoAtivo])
+
+  useEffect(() => {
+    if (!usuarioEntrou || pedidosCozinha.length === 0) return
+
+    const chaveVistos = `mestre_pedidos_prontos_vistos_${hoje()}`
+    let vistos = []
+
+    try {
+      vistos = JSON.parse(localStorage.getItem(chaveVistos) || '[]')
+      if (!Array.isArray(vistos)) vistos = []
+    } catch (e) {
+      vistos = []
+    }
+
+    const pedidosProntosNovos = pedidosCozinha.filter(p =>
+      p.status === 'pronto' && !vistos.includes(p.id)
+    )
+
+    if (pedidosProntosNovos.length === 0) return
+
+    setAlertasPedidosProntos(prev => {
+      const idsAtuais = new Set(prev.map(a => a.id))
+      const novos = pedidosProntosNovos.filter(p => !idsAtuais.has(p.id))
+      return [...prev, ...novos]
+    })
+
+    const novosVistos = [...new Set([...vistos, ...pedidosProntosNovos.map(p => p.id)])]
+    localStorage.setItem(chaveVistos, JSON.stringify(novosVistos))
+
+    if (audioAlertasLiberado) {
+      pedidosProntosNovos.forEach((pedido, index) => {
+        setTimeout(() => {
+          try {
+            const audio = new Audio('/pedido-pronto.mp3')
+            audio.volume = 1
+            audio.play().catch(() => {
+              try {
+                const fallback = new Audio('/alerta.mp3')
+                fallback.volume = 1
+                fallback.play().catch(() => {})
+              } catch (e) {}
+            })
+          } catch (e) {}
+        }, index * 700)
+      })
+    }
+  }, [pedidosCozinha, usuarioEntrou, audioAlertasLiberado])
+
+  const ativarAudioAlertas = async () => {
+    try {
+      const audio = new Audio('/alerta.mp3')
+      audio.volume = 0.9
+      await audio.play()
+      setAudioAlertasLiberado(true)
+      localStorage.setItem('mestre_audio_alertas', '1')
+      alert('🔔 Som dos pedidos prontos ativado neste aparelho.')
+    } catch (error) {
+      alert('O navegador bloqueou o som. Toque novamente em ativar som e verifique se o aparelho não está no silencioso.')
+    }
+  }
+
+  const dispensarAlertaPedidoPronto = pedidoId => {
+    setAlertasPedidosProntos(prev => prev.filter(p => p.id !== pedidoId))
+  }
 
 
   const entrarNoSistema = () => {
@@ -2087,6 +2155,78 @@ MESTRE DO ESPETO PDV
         liberarAdministrador={liberarAdministrador}
         bloquearAdministrador={bloquearAdministrador}
       />
+
+      <div style={styles.card}>
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
+          flexWrap: 'wrap'
+        }}>
+          <div>
+            <strong style={{ fontSize: 18 }}>🔔 Alertas do Atendimento</strong>
+            <div style={{ fontSize: 13, opacity: 0.8, marginTop: 3 }}>
+              Som: {audioAlertasLiberado ? '✅ ativado neste aparelho' : '🔇 precisa ser ativado'}
+            </div>
+          </div>
+
+          {!audioAlertasLiberado && (
+            <button
+              onClick={ativarAudioAlertas}
+              style={{
+                ...styles.green,
+                minHeight: 48,
+                fontSize: 16,
+                fontWeight: 900
+              }}
+            >
+              🔊 ATIVAR SOM
+            </button>
+          )}
+        </div>
+
+        {alertasPedidosProntos.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            {alertasPedidosProntos.map(pedido => (
+              <div
+                key={pedido.id}
+                style={{
+                  background: '#12351e',
+                  border: '3px solid #22c55e',
+                  borderRadius: 12,
+                  padding: 14,
+                  marginBottom: 9,
+                  boxShadow: '0 0 0 2px rgba(34,197,94,0.15)'
+                }}
+              >
+                <div style={{ fontSize: 22, fontWeight: 900 }}>
+                  🔔 PEDIDO #{String(pedido.numero || 0).padStart(4, '0')} PRONTO
+                </div>
+                <div style={{ fontSize: 20, marginTop: 5, fontWeight: 800 }}>
+                  {pedido.cliente || 'Sem referência'}
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  Atendente: <strong>{pedido.atendente || '-'}</strong>
+                </div>
+                <button
+                  onClick={() => dispensarAlertaPedidoPronto(pedido.id)}
+                  style={{
+                    ...styles.green,
+                    width: '100%',
+                    minHeight: 52,
+                    marginTop: 10,
+                    fontSize: 17,
+                    fontWeight: 900
+                  }}
+                >
+                  👍 CIENTE
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={styles.card}>
         <button
