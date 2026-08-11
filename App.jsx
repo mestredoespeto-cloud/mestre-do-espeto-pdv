@@ -218,6 +218,9 @@ export default function App() {
   const [motivo, setMotivo] = useState('')
   const [atendente, setAtendente] = useState(localStorage.getItem('atendente_mestre') || '')
   const [pagamento, setPagamento] = useState('dinheiro')
+  const [mostrarFechamentoCaixa, setMostrarFechamentoCaixa] = useState(false)
+  const [valorRecebido, setValorRecebido] = useState('')
+  const [fechandoComanda, setFechandoComanda] = useState(false)
   const [estoque, setEstoque] = useState(estoqueInicial)
   const [estoqueInicialDia, setEstoqueInicialDia] = useState({})
   const [busca, setBusca] = useState('')
@@ -298,6 +301,11 @@ export default function App() {
     const atual = comandas.find(c => c.id === comandaAtual.id)
     if (atual) setComandaAtual(atual)
   }, [comandas])
+
+  useEffect(() => {
+    setMostrarFechamentoCaixa(false)
+    setValorRecebido('')
+  }, [comandaAtual?.id])
 
   useEffect(() => {
     const ref = doc(db, 'estoquesIniciais', dataRelatorio)
@@ -1637,29 +1645,122 @@ Obrigado e volte sempre!
     imprimirTexto(texto)
   }
 
-  const fecharComanda = async () => {
+  const abrirFechamentoCaixa = () => {
     if (!comandaAtual) return
-    if (!comandaAtual.itens || comandaAtual.itens.length === 0) return alert('Comanda sem itens.')
+    if (!comandaAtual.itens || comandaAtual.itens.length === 0) {
+      return alert('Comanda sem itens.')
+    }
 
-    const dataFechamento = hoje()
+    setValorRecebido('')
+    setMostrarFechamentoCaixa(true)
+
+    setTimeout(() => {
+      document.getElementById('fechamento-caixa')?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+      })
+    }, 100)
+  }
+
+  const valorRecebidoNumero = Number(
+    String(valorRecebido || '')
+      .replace(/\s/g, '')
+      .replace(',', '.')
+  ) || 0
+
+  const trocoFechamento = pagamento === 'dinheiro'
+    ? Math.max(0, valorRecebidoNumero - Number(total || 0))
+    : 0
+
+  const confirmarFechamentoComanda = async () => {
+    if (!comandaAtual || fechandoComanda) return
+
+    const tipoAtual = comandaAtual.tipoComanda || 'Cliente'
+    const ehCliente = tipoAtual === 'Cliente'
     const financeiro = calcularFinanceiroComanda(comandaAtual)
+    const totalFechamento = ehCliente
+      ? Number(financeiro.totalVenda || 0)
+      : Number(financeiro.totalRepasse || 0)
 
-    await addDoc(collection(db, 'historico'), {
-      ...comandaAtual,
-      pagamento,
-      total: (comandaAtual.tipoComanda || 'Cliente') === 'Cliente' ? financeiro.totalVenda : financeiro.totalRepasse,
-      totalVenda: financeiro.totalVenda,
-      totalCusto: financeiro.totalCusto,
-      totalRepasse: financeiro.totalRepasse,
-      quantidadeEspetosInternos: financeiro.quantidadeEspetosInternos,
-      dataFechamento,
-      fechadoEm: new Date().toISOString(),
-      criadoEm: serverTimestamp()
-    })
+    if (ehCliente && pagamento === 'dinheiro' && valorRecebidoNumero < totalFechamento) {
+      return alert(
+        `Valor recebido insuficiente.\n\n` +
+        `Total: R$ ${totalFechamento.toFixed(2)}\n` +
+        `Recebido: R$ ${valorRecebidoNumero.toFixed(2)}`
+      )
+    }
 
-     await deleteDoc(doc(db, 'comandas', comandaAtual.id))
-  setComandaAtual(null)
-}
+    const nomePagamento = pagamento === 'dinheiro'
+      ? 'Dinheiro'
+      : pagamento === 'pix'
+        ? 'Pix'
+        : 'Cartão'
+
+    const troco = ehCliente && pagamento === 'dinheiro'
+      ? Math.max(0, valorRecebidoNumero - totalFechamento)
+      : 0
+
+    const mensagem = ehCliente
+      ? `CONFIRMAR PAGAMENTO?\n\n` +
+        `Comanda: ${comandaAtual.cliente}\n` +
+        `Total: R$ ${totalFechamento.toFixed(2)}\n` +
+        `Pagamento: ${nomePagamento}` +
+        (pagamento === 'dinheiro'
+          ? `\nRecebido: R$ ${valorRecebidoNumero.toFixed(2)}\nTroco: R$ ${troco.toFixed(2)}`
+          : '')
+      : `CONFIRMAR FECHAMENTO?\n\n` +
+        `Comanda: ${comandaAtual.cliente}\n` +
+        `Tipo: ${tipoAtual}\n` +
+        `Total a repassar / custo: R$ ${totalFechamento.toFixed(2)}`
+
+    if (!confirm(mensagem)) return
+
+    setFechandoComanda(true)
+
+    try {
+      const dataFechamento = hoje()
+
+      await addDoc(collection(db, 'historico'), {
+        ...comandaAtual,
+        pagamento: ehCliente ? pagamento : 'interno',
+        formaPagamento: ehCliente ? nomePagamento : 'Consumo interno',
+        valorRecebido: ehCliente && pagamento === 'dinheiro'
+          ? valorRecebidoNumero
+          : totalFechamento,
+        troco: ehCliente && pagamento === 'dinheiro' ? troco : 0,
+        total: totalFechamento,
+        totalVenda: financeiro.totalVenda,
+        totalCusto: financeiro.totalCusto,
+        totalRepasse: financeiro.totalRepasse,
+        quantidadeEspetosInternos: financeiro.quantidadeEspetosInternos,
+        dataFechamento,
+        fechadoEm: new Date().toISOString(),
+        criadoEm: serverTimestamp()
+      })
+
+      await deleteDoc(doc(db, 'comandas', comandaAtual.id))
+
+      setComandaAtual(null)
+      setMostrarFechamentoCaixa(false)
+      setValorRecebido('')
+      setPagamento('dinheiro')
+
+      alert(
+        ehCliente
+          ? `✅ Pagamento confirmado!\n\n` +
+            `Total: R$ ${totalFechamento.toFixed(2)}` +
+            (pagamento === 'dinheiro' ? `\nTroco: R$ ${troco.toFixed(2)}` : '')
+          : '✅ Comanda interna fechada com sucesso!'
+      )
+    } catch (error) {
+      console.error('Erro ao fechar comanda:', error)
+      alert('Não foi possível fechar a comanda. Tente novamente.')
+    } finally {
+      setFechandoComanda(false)
+    }
+  }
+
+  const fecharComanda = () => abrirFechamentoCaixa()
 
 const excluirComandaAberta = async () => {
   if (!comandaAtual) return alert('Selecione uma comanda para excluir.')
@@ -2870,11 +2971,20 @@ MESTRE DO ESPETO PDV
             </div>
           )}
 
-          <select value={pagamento} onChange={e => setPagamento(e.target.value)} style={styles.input}>
-            <option value="dinheiro">Dinheiro</option>
-            <option value="pix">Pix</option>
-            <option value="cartao">Cartão</option>
-          </select>
+          {(comandaAtual.tipoComanda || 'Cliente') === 'Cliente' && (
+            <select
+              value={pagamento}
+              onChange={e => {
+                setPagamento(e.target.value)
+                setValorRecebido('')
+              }}
+              style={styles.input}
+            >
+              <option value="dinheiro">Dinheiro</option>
+              <option value="pix">Pix</option>
+              <option value="cartao">Cartão</option>
+            </select>
+          )}
 
           <button
             onClick={enviarParaCozinha}
@@ -2911,8 +3021,127 @@ MESTRE DO ESPETO PDV
 )}
 
 <button onClick={fecharComanda} style={styles.red}>
-  💰 Fechar Comanda
+  💰 Ir para Fechamento
 </button>
+
+{mostrarFechamentoCaixa && (
+  <div
+    id="fechamento-caixa"
+    style={{
+      marginTop: 14,
+      padding: 16,
+      borderRadius: 12,
+      border: '3px solid #22c55e',
+      background: '#10291a'
+    }}
+  >
+    <h2 style={{ marginTop: 0 }}>💰 FECHAMENTO — {comandaAtual.cliente}</h2>
+
+    <div style={{
+      background: '#07150c',
+      borderRadius: 10,
+      padding: 14,
+      marginBottom: 12,
+      textAlign: 'center'
+    }}>
+      <div style={{ fontSize: 14, opacity: 0.8 }}>
+        {(comandaAtual.tipoComanda || 'Cliente') === 'Cliente'
+          ? 'TOTAL DA CONTA'
+          : 'TOTAL A REPASSAR / CUSTO'}
+      </div>
+      <div style={{ fontSize: 34, fontWeight: 900 }}>
+        R$ {Number(total || 0).toFixed(2)}
+      </div>
+    </div>
+
+    {(comandaAtual.tipoComanda || 'Cliente') === 'Cliente' ? (
+      <>
+        <label><strong>Forma de pagamento</strong></label>
+        <select
+          value={pagamento}
+          onChange={e => {
+            setPagamento(e.target.value)
+            setValorRecebido('')
+          }}
+          style={{ ...styles.input, fontSize: 18, minHeight: 52 }}
+        >
+          <option value="dinheiro">💵 Dinheiro</option>
+          <option value="pix">📱 Pix</option>
+          <option value="cartao">💳 Cartão</option>
+        </select>
+
+        {pagamento === 'dinheiro' && (
+          <div style={{ marginTop: 12 }}>
+            <label><strong>Valor recebido</strong></label>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="Ex.: 100,00"
+              value={valorRecebido}
+              onChange={e => setValorRecebido(e.target.value.replace(/[^0-9,.]/g, ''))}
+              style={{ ...styles.input, fontSize: 22, minHeight: 54 }}
+            />
+
+            <div style={{
+              marginTop: 10,
+              padding: 12,
+              borderRadius: 10,
+              background: valorRecebidoNumero >= Number(total || 0) ? '#17351f' : '#3b1b1b',
+              fontSize: 22,
+              fontWeight: 900
+            }}>
+              Troco: R$ {trocoFechamento.toFixed(2)}
+            </div>
+
+            {valorRecebido && valorRecebidoNumero < Number(total || 0) && (
+              <div style={{ marginTop: 8, color: '#fca5a5', fontWeight: 800 }}>
+                ⚠️ Valor recebido menor que o total da conta.
+              </div>
+            )}
+          </div>
+        )}
+      </>
+    ) : (
+      <div style={styles.box}>
+        Consumo interno: este fechamento não entra no faturamento de clientes.
+      </div>
+    )}
+
+    <button
+      onClick={confirmarFechamentoComanda}
+      disabled={
+        fechandoComanda ||
+        (
+          (comandaAtual.tipoComanda || 'Cliente') === 'Cliente' &&
+          pagamento === 'dinheiro' &&
+          valorRecebidoNumero < Number(total || 0)
+        )
+      }
+      style={{
+        ...styles.green,
+        width: '100%',
+        minHeight: 58,
+        marginTop: 14,
+        fontSize: 18,
+        fontWeight: 900,
+        opacity: fechandoComanda ? 0.6 : 1
+      }}
+    >
+      {fechandoComanda ? '⏳ FECHANDO...' : '✅ CONFIRMAR PAGAMENTO E FECHAR'}
+    </button>
+
+    <button
+      onClick={() => {
+        setMostrarFechamentoCaixa(false)
+        setValorRecebido('')
+      }}
+      disabled={fechandoComanda}
+      style={{ ...styles.smallBtn, width: '100%', marginTop: 8 }}
+    >
+      ← Voltar sem fechar
+    </button>
+  </div>
+)}
         </div>
       )}
 
