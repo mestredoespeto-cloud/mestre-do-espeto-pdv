@@ -130,6 +130,18 @@ const hoje = () => {
   return `${ano}-${mes}-${dia}`
 }
 
+const formatarDataBR = (dataISO) => {
+  const [ano, mes, dia] = String(dataISO || '').split('-')
+  if (!ano || !mes || !dia) return dataISO || ''
+  return `${dia}/${mes}/${ano}`
+}
+
+const formatarMoedaBR = (valor) => {
+  const numero = Number(valor || 0)
+  const normalizado = Math.abs(numero) < 0.005 ? 0 : numero
+  return normalizado.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const custosPadrao = {
   'Fraldinha': 5.19,
   'Costela': 5.19,
@@ -221,6 +233,14 @@ export default function App() {
   const [mostrarFechamentoCaixa, setMostrarFechamentoCaixa] = useState(false)
   const [valorRecebido, setValorRecebido] = useState('')
   const [fechandoComanda, setFechandoComanda] = useState(false)
+  const [caixaDia, setCaixaDia] = useState(null)
+  const [movimentosCaixa, setMovimentosCaixa] = useState([])
+  const [mostrarGestaoCaixa, setMostrarGestaoCaixa] = useState(false)
+  const [valorMovimentoCaixa, setValorMovimentoCaixa] = useState('')
+  const [motivoMovimentoCaixa, setMotivoMovimentoCaixa] = useState('')
+  const [valorContadoCaixa, setValorContadoCaixa] = useState('')
+  const [historicoCaixas, setHistoricoCaixas] = useState([])
+  const [dataHistoricoCaixa, setDataHistoricoCaixa] = useState(hoje())
   const [estoque, setEstoque] = useState(estoqueInicial)
   const [estoqueInicialDia, setEstoqueInicialDia] = useState({})
   const [busca, setBusca] = useState('')
@@ -294,6 +314,38 @@ export default function App() {
       unsubHistorico()
       unsubEstoque()
     }
+  }, [])
+
+  useEffect(() => {
+    const data = hoje()
+
+    const unsubCaixa = onSnapshot(doc(db, 'caixas', data), snap => {
+      setCaixaDia(snap.exists() ? { id: snap.id, ...snap.data() } : null)
+    })
+
+    const unsubMovimentos = onSnapshot(collection(db, 'movimentosCaixa'), snapshot => {
+      const lista = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(m => m.data === data)
+        .sort((a, b) => String(a.criadoEmISO || '').localeCompare(String(b.criadoEmISO || '')))
+      setMovimentosCaixa(lista)
+    })
+
+    return () => {
+      unsubCaixa()
+      unsubMovimentos()
+    }
+  }, [])
+
+  useEffect(() => {
+    const unsubHistoricoCaixas = onSnapshot(collection(db, 'caixas'), snapshot => {
+      const lista = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(b.data || b.id || '').localeCompare(String(a.data || a.id || '')))
+      setHistoricoCaixas(lista)
+    })
+
+    return () => unsubHistoricoCaixas()
   }, [])
 
   useEffect(() => {
@@ -669,6 +721,187 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
     quantidadeEspetosInternos
   }
 }
+
+  const vendasDinheiroHoje = historico
+    .filter(h => h.dataFechamento === hoje() && (h.tipoComanda || 'Cliente') === 'Cliente' && h.pagamento === 'dinheiro')
+    .reduce((acc, h) => acc + Number(h.total || 0), 0)
+
+  const totalSuprimentosHoje = movimentosCaixa
+    .filter(m => m.tipo === 'suprimento')
+    .reduce((acc, m) => acc + Number(m.valor || 0), 0)
+
+  const totalSangriasHoje = movimentosCaixa
+    .filter(m => m.tipo === 'sangria')
+    .reduce((acc, m) => acc + Number(m.valor || 0), 0)
+
+  const valorEsperadoCaixa = Number(caixaDia?.valorAbertura || 0) + vendasDinheiroHoje + totalSuprimentosHoje - totalSangriasHoje
+
+  const abrirCaixaDia = async () => {
+    if (caixaDia?.status === 'aberto') return alert('O caixa de hoje já está aberto.')
+    if (caixaDia?.status === 'fechado') return alert('O caixa de hoje já foi fechado.')
+
+    const entrada = prompt('Valor inicial para troco no caixa:\nEx.: 100,00')
+    if (entrada === null) return
+    const valor = Number(String(entrada).replace(',', '.'))
+    if (!Number.isFinite(valor) || valor < 0) return alert('Digite um valor válido para abertura.')
+
+    await setDoc(doc(db, 'caixas', hoje()), {
+      data: hoje(), status: 'aberto', valorAbertura: valor,
+      abertoPor: atendente || 'Não informado',
+      abertoEmISO: new Date().toISOString(), abertoEm: serverTimestamp()
+    })
+    setMostrarGestaoCaixa(true)
+    alert(`✅ Caixa aberto com R$ ${formatarMoedaBR(valor)}.`)
+  }
+
+  const registrarMovimentoCaixa = async tipo => {
+    if (caixaDia?.status !== 'aberto') return alert('Abra o caixa antes de registrar movimentações.')
+    const valor = Number(String(valorMovimentoCaixa || '').replace(',', '.'))
+    if (!Number.isFinite(valor) || valor <= 0) return alert('Digite um valor maior que zero.')
+    if (!motivoMovimentoCaixa.trim()) return alert('Informe o motivo da movimentação.')
+    if (tipo === 'sangria' && valor > valorEsperadoCaixa) {
+      return alert(`Sangria maior que o valor esperado em caixa.\nEsperado: R$ ${formatarMoedaBR(valorEsperadoCaixa)}`)
+    }
+
+    await addDoc(collection(db, 'movimentosCaixa'), {
+      data: hoje(), tipo, valor, motivo: motivoMovimentoCaixa.trim(),
+      responsavel: atendente || 'Não informado',
+      criadoEmISO: new Date().toISOString(), criadoEm: serverTimestamp()
+    })
+    setValorMovimentoCaixa('')
+    setMotivoMovimentoCaixa('')
+    alert(tipo === 'suprimento' ? '✅ Suprimento registrado.' : '✅ Sangria registrada.')
+  }
+
+  const fecharCaixaDia = async () => {
+    if (caixaDia?.status !== 'aberto') return alert('Não há caixa aberto para fechar.')
+    const contado = Number(String(valorContadoCaixa || '').replace(',', '.'))
+    if (!Number.isFinite(contado) || contado < 0) return alert('Informe o valor contado fisicamente no caixa.')
+    const diferenca = contado - valorEsperadoCaixa
+    const texto = diferenca === 0 ? 'Caixa conferido sem diferença.' : diferenca > 0 ? `Sobra de R$ ${formatarMoedaBR(diferenca)}` : `Falta de R$ ${formatarMoedaBR(Math.abs(diferenca))}`
+
+    if (!confirm(`FECHAR CAIXA?\n\nAbertura: R$ ${formatarMoedaBR(caixaDia.valorAbertura)}\nVendas em dinheiro: R$ ${formatarMoedaBR(vendasDinheiroHoje)}\nSuprimentos: R$ ${formatarMoedaBR(totalSuprimentosHoje)}\nSangrias: R$ ${formatarMoedaBR(totalSangriasHoje)}\nEsperado: R$ ${formatarMoedaBR(valorEsperadoCaixa)}\nContado: R$ ${formatarMoedaBR(contado)}\n\n${texto}`)) return
+
+    const vendasClientesHoje = historico.filter(h =>
+      h.dataFechamento === hoje() &&
+      (h.tipoComanda || 'Cliente') === 'Cliente'
+    )
+    const vendasPixHoje = vendasClientesHoje
+      .filter(h => h.pagamento === 'pix')
+      .reduce((acc, h) => acc + Number(h.total || 0), 0)
+    const vendasCartaoHoje = vendasClientesHoje
+      .filter(h => h.pagamento === 'cartao')
+      .reduce((acc, h) => acc + Number(h.total || 0), 0)
+    const faturamentoClientesHoje = vendasDinheiroHoje + vendasPixHoje + vendasCartaoHoje
+
+    await setDoc(doc(db, 'caixas', hoje()), {
+      vendasDinheiro: vendasDinheiroHoje,
+      vendasPix: vendasPixHoje,
+      vendasCartao: vendasCartaoHoje,
+      faturamentoClientes: faturamentoClientesHoje,
+      totalSuprimentos: totalSuprimentosHoje,
+      totalSangrias: totalSangriasHoje,
+      valorEsperado: valorEsperadoCaixa,
+      valorContado: contado,
+      diferenca,
+      status: 'fechado',
+      fechadoPor: atendente || 'Não informado',
+      fechadoEmISO: new Date().toISOString(),
+      fechadoEm: serverTimestamp()
+    }, { merge: true })
+    setValorContadoCaixa('')
+    alert(`🔒 Caixa fechado.\n${texto}`)
+  }
+
+  const caixaHistoricoSelecionado = historicoCaixas.find(c =>
+    (c.data || c.id) === dataHistoricoCaixa
+  ) || null
+
+  const vendasHistoricoSelecionado = historico.filter(h =>
+    h.dataFechamento === dataHistoricoCaixa &&
+    (h.tipoComanda || 'Cliente') === 'Cliente'
+  )
+
+  const dinheiroHistoricoSelecionado = Number(
+    caixaHistoricoSelecionado?.vendasDinheiro ??
+    vendasHistoricoSelecionado
+      .filter(h => h.pagamento === 'dinheiro')
+      .reduce((acc, h) => acc + Number(h.total || 0), 0)
+  )
+
+  const pixHistoricoSelecionado = Number(
+    caixaHistoricoSelecionado?.vendasPix ??
+    vendasHistoricoSelecionado
+      .filter(h => h.pagamento === 'pix')
+      .reduce((acc, h) => acc + Number(h.total || 0), 0)
+  )
+
+  const cartaoHistoricoSelecionado = Number(
+    caixaHistoricoSelecionado?.vendasCartao ??
+    vendasHistoricoSelecionado
+      .filter(h => h.pagamento === 'cartao')
+      .reduce((acc, h) => acc + Number(h.total || 0), 0)
+  )
+
+  const faturamentoHistoricoSelecionado = Number(
+    caixaHistoricoSelecionado?.faturamentoClientes ??
+    (dinheiroHistoricoSelecionado + pixHistoricoSelecionado + cartaoHistoricoSelecionado)
+  )
+
+  const limparCaixaTesteDia = async () => {
+    const data = hoje()
+
+    const primeiraConfirmacao = confirm(
+      `ATENÇÃO — LIMPAR CAIXA DE TESTE\n\n` +
+      `Data: ${formatarDataBR(data)}\n\n` +
+      `Isso apagará SOMENTE:\n` +
+      `• abertura/fechamento do caixa do dia;\n` +
+      `• suprimentos do dia;\n` +
+      `• sangrias do dia.\n\n` +
+      `NÃO apagará vendas, comandas, histórico de vendas ou estoque.\n\n` +
+      `Deseja continuar?`
+    )
+
+    if (!primeiraConfirmacao) return
+
+    const confirmacaoFinal = prompt(
+      'Para confirmar, digite exatamente: LIMPAR'
+    )
+
+    if (confirmacaoFinal !== 'LIMPAR') {
+      return alert('Limpeza cancelada.')
+    }
+
+    try {
+      const movimentosSnapshot = await getDocs(
+        query(
+          collection(db, 'movimentosCaixa'),
+          where('data', '==', data)
+        )
+      )
+
+      const exclusoes = movimentosSnapshot.docs.map(item =>
+        deleteDoc(doc(db, 'movimentosCaixa', item.id))
+      )
+
+      await Promise.all(exclusoes)
+      await deleteDoc(doc(db, 'caixas', data))
+
+      setCaixaDia(null)
+      setMovimentosCaixa([])
+      setValorMovimentoCaixa('')
+      setMotivoMovimentoCaixa('')
+      setValorContadoCaixa('')
+
+      alert(
+        `🧹 Caixa de teste de ${formatarDataBR(data)} limpo com sucesso.\n\n` +
+        `As vendas e comandas foram preservadas.`
+      )
+    } catch (error) {
+      console.error('Erro ao limpar caixa de teste:', error)
+      alert('Não foi possível limpar o caixa de teste. Tente novamente.')
+    }
+  }
 
   const criarComanda = async () => {
   if (!atendente.trim()) {
@@ -3202,6 +3435,178 @@ MESTRE DO ESPETO PDV
   )}
 </div>
  )}
+
+{adminLiberado && (
+  <div style={styles.card}>
+    <button onClick={() => setMostrarGestaoCaixa(!mostrarGestaoCaixa)} style={{ ...styles.green, width: '100%' }}>
+      💵 {mostrarGestaoCaixa ? 'Ocultar Gestão de Caixa' : 'Abrir Gestão de Caixa'}
+      {caixaDia?.status === 'aberto' ? ' — CAIXA ABERTO' : caixaDia?.status === 'fechado' ? ' — CAIXA FECHADO' : ''}
+    </button>
+
+    {mostrarGestaoCaixa && (
+      <div style={{ marginTop: 12 }}>
+        {!caixaDia && (
+          <button onClick={abrirCaixaDia} style={{ ...styles.green, width: '100%', minHeight: 54 }}>🟢 ABRIR CAIXA</button>
+        )}
+
+        {caixaDia && (
+          <>
+            <h2>💵 Gestão de Caixa — {formatarDataBR(hoje())}</h2>
+            <div style={styles.box}>Abertura: <strong>R$ {formatarMoedaBR(caixaDia.valorAbertura)}</strong></div>
+            <div style={styles.box}>Vendas em dinheiro: <strong>R$ {formatarMoedaBR(vendasDinheiroHoje)}</strong></div>
+            <div style={styles.box}>Suprimentos: <strong>R$ {formatarMoedaBR(totalSuprimentosHoje)}</strong></div>
+            <div style={styles.box}>Sangrias: <strong>R$ {formatarMoedaBR(totalSangriasHoje)}</strong></div>
+            <div style={{ ...styles.box, fontSize: 22 }}>
+              VALOR ESPERADO: <strong>R$ {formatarMoedaBR(valorEsperadoCaixa)}</strong>
+            </div>
+
+            {caixaDia.status === 'aberto' && (
+              <>
+                <input value={valorMovimentoCaixa} onChange={e => setValorMovimentoCaixa(e.target.value.replace(/[^0-9,.]/g, ''))} inputMode="decimal" placeholder="Valor da movimentação" style={styles.input} />
+                <input value={motivoMovimentoCaixa} onChange={e => setMotivoMovimentoCaixa(e.target.value)} placeholder="Motivo da movimentação" style={styles.input} />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => registrarMovimentoCaixa('suprimento')} style={{ ...styles.green, flex: 1 }}>➕ SUPRIMENTO</button>
+                  <button onClick={() => registrarMovimentoCaixa('sangria')} style={{ ...styles.red, flex: 1 }}>➖ SANGRIA</button>
+                </div>
+
+                <h3 style={{ marginTop: 18 }}>🔒 Fechar Caixa</h3>
+                <input value={valorContadoCaixa} onChange={e => setValorContadoCaixa(e.target.value.replace(/[^0-9,.]/g, ''))} inputMode="decimal" placeholder="Valor contado fisicamente" style={styles.input} />
+                {valorContadoCaixa && (
+                  <div style={styles.box}>
+                    Diferença: <strong>R$ {formatarMoedaBR(Number(String(valorContadoCaixa).replace(',', '.')) - valorEsperadoCaixa)}</strong>
+                  </div>
+                )}
+                <button onClick={fecharCaixaDia} style={{ ...styles.red, width: '100%' }}>🔒 FECHAR CAIXA</button>
+              </>
+            )}
+
+            {caixaDia.status === 'fechado' && (
+              <div style={styles.box}>
+                🔒 <strong>Caixa fechado</strong><br />
+                Esperado: R$ {formatarMoedaBR(caixaDia.valorEsperado)}<br />
+                Contado: R$ {formatarMoedaBR(caixaDia.valorContado)}<br />
+                Diferença: R$ {formatarMoedaBR(caixaDia.diferenca)}
+              </div>
+            )}
+
+            {movimentosCaixa.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <h3>Movimentações</h3>
+                {movimentosCaixa.map(m => (
+                  <div key={m.id} style={styles.box}>
+                    {m.tipo === 'suprimento' ? '➕ SUPRIMENTO' : '➖ SANGRIA'} — R$ {formatarMoedaBR(m.valor)}<br />
+                    <small>{m.motivo} • {m.responsavel || '-'} • {m.criadoEmISO ? new Date(m.criadoEmISO).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : ''}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{
+              marginTop: 18,
+              paddingTop: 14,
+              borderTop: '1px solid #555'
+            }}>
+              <button
+                onClick={limparCaixaTesteDia}
+                style={{
+                  ...styles.red,
+                  width: '100%',
+                  minHeight: 50,
+                  fontWeight: 900
+                }}
+              >
+                🧹 LIMPAR CAIXA DE TESTE DO DIA
+              </button>
+              <small style={{ display: 'block', marginTop: 7, opacity: 0.8 }}>
+                Apaga somente abertura/fechamento, suprimentos e sangrias de {formatarDataBR(hoje())}.
+                Vendas, comandas e histórico de vendas são preservados.
+              </small>
+            </div>
+          </>
+        )}
+      </div>
+    )}
+  </div>
+)}
+
+{adminLiberado && (
+  <div style={styles.card}>
+    <h2>📚 Histórico de Fechamentos de Caixa</h2>
+
+    <input
+      type="date"
+      value={dataHistoricoCaixa}
+      onChange={e => setDataHistoricoCaixa(e.target.value)}
+      style={styles.input}
+    />
+
+    {!caixaHistoricoSelecionado ? (
+      <div style={styles.box}>
+        Nenhum caixa registrado em <strong>{formatarDataBR(dataHistoricoCaixa)}</strong>.
+      </div>
+    ) : (
+      <>
+        <div style={styles.box}>
+          <strong>📅 {formatarDataBR(caixaHistoricoSelecionado.data || caixaHistoricoSelecionado.id)}</strong><br />
+          Status: <strong>{caixaHistoricoSelecionado.status === 'fechado' ? '🔒 Fechado' : '🟢 Aberto'}</strong>
+        </div>
+
+        <div style={styles.box}>
+          <strong>💳 Faturamento por forma de pagamento</strong><br />
+          💵 Dinheiro: R$ {formatarMoedaBR(dinheiroHistoricoSelecionado)}<br />
+          📱 Pix: R$ {formatarMoedaBR(pixHistoricoSelecionado)}<br />
+          💳 Cartão: R$ {formatarMoedaBR(cartaoHistoricoSelecionado)}<br />
+          <strong>Total clientes: R$ {formatarMoedaBR(faturamentoHistoricoSelecionado)}</strong>
+        </div>
+
+        <div style={styles.box}>
+          <strong>💰 Conferência da gaveta</strong><br />
+          Abertura: R$ {formatarMoedaBR(caixaHistoricoSelecionado.valorAbertura)}<br />
+          Suprimentos: R$ {formatarMoedaBR(caixaHistoricoSelecionado.totalSuprimentos)}<br />
+          Sangrias: R$ {formatarMoedaBR(caixaHistoricoSelecionado.totalSangrias)}<br />
+          Esperado: R$ {formatarMoedaBR(caixaHistoricoSelecionado.valorEsperado)}<br />
+          Contado: R$ {formatarMoedaBR(caixaHistoricoSelecionado.valorContado)}<br />
+          <strong>
+            Diferença: R$ {formatarMoedaBR(caixaHistoricoSelecionado.diferenca)}
+          </strong>
+        </div>
+
+        <div style={styles.box}>
+          <strong>👤 Responsáveis</strong><br />
+          Abertura: {caixaHistoricoSelecionado.abertoPor || 'Não informado'}<br />
+          Fechamento: {caixaHistoricoSelecionado.fechadoPor || 'Não informado'}
+          {caixaHistoricoSelecionado.abertoEmISO && (
+            <><br />Aberto às: {new Date(caixaHistoricoSelecionado.abertoEmISO).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</>
+          )}
+          {caixaHistoricoSelecionado.fechadoEmISO && (
+            <><br />Fechado às: {new Date(caixaHistoricoSelecionado.fechadoEmISO).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</>
+          )}
+        </div>
+      </>
+    )}
+
+    {historicoCaixas.length > 0 && (
+      <div style={{ marginTop: 12 }}>
+        <strong>Últimos caixas registrados</strong>
+        {historicoCaixas.slice(0, 7).map(c => (
+          <button
+            key={c.id}
+            onClick={() => setDataHistoricoCaixa(c.data || c.id)}
+            style={{
+              ...styles.button,
+              width: '100%',
+              marginTop: 6,
+              textAlign: 'left'
+            }}
+          >
+            {formatarDataBR(c.data || c.id)} — {c.status === 'fechado' ? '🔒 Fechado' : '🟢 Aberto'}
+            {c.status === 'fechado' ? ` — Diferença R$ ${formatarMoedaBR(c.diferenca)}` : ''}
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+)}
 
 {adminLiberado && (
 <div style={styles.card}>
