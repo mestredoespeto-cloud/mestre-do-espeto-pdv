@@ -417,18 +417,50 @@ export default function App() {
     if (audioAlertasLiberado) {
       pedidosProntosNovos.forEach((pedido, index) => {
         setTimeout(() => {
+          const tocarFalaPedidoPronto = () => {
+            try {
+              const fala = new Audio('/pedido-pronto.mp3')
+              fala.volume = 1
+              fala.play().catch(() => {
+                try {
+                  const fallback = new Audio('/alerta.mp3')
+                  fallback.volume = 1
+                  fallback.play().catch(() => {})
+                } catch (e) {}
+              })
+            } catch (e) {}
+          }
+
           try {
-            const audio = new Audio('/pedido-pronto.mp3')
-            audio.volume = 1
-            audio.play().catch(() => {
-              try {
-                const fallback = new Audio('/alerta.mp3')
-                fallback.volume = 1
-                fallback.play().catch(() => {})
-              } catch (e) {}
-            })
-          } catch (e) {}
-        }, index * 700)
+            const sino = new Audio('/campainha.mp3')
+            sino.volume = 1
+            sino.currentTime = 0
+
+            sino.play()
+              .then(() => {
+                let falaIniciada = false
+
+                const iniciarFala = () => {
+                  if (falaIniciada) return
+                  falaIniciada = true
+                  sino.removeEventListener('ended', iniciarFala)
+                  setTimeout(tocarFalaPedidoPronto, 180)
+                }
+
+                sino.addEventListener('ended', iniciarFala)
+
+                setTimeout(() => {
+                  if (falaIniciada) return
+                  sino.pause()
+                  sino.currentTime = 0
+                  iniciarFala()
+                }, 2200)
+              })
+              .catch(() => tocarFalaPedidoPronto())
+          } catch (e) {
+            tocarFalaPedidoPronto()
+          }
+        }, index * 3000)
       })
     }
   }, [pedidosCozinha, usuarioEntrou, audioAlertasLiberado])
