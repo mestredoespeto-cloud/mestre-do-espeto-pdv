@@ -419,6 +419,13 @@ export default function App() {
     try { new Audio(arquivo).play() } catch (e) {}
   }
 
+  const criarIdItemCozinha = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID()
+    }
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  }
+
   const salvarEstoque = async (novoEstoque) => {
     await setDoc(doc(db, 'controle', 'estoque'), novoEstoque)
   }
@@ -647,6 +654,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       estoqueNome: nomeEstoque,
       observacaoCombo,
       observacao: observacaoItem,
+      cozinhaItemId: criarIdItemCozinha(),
       enviadoCozinha: false
     }
 
@@ -735,6 +743,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       observacao: observacaoExecutivo.trim(),
       espetosInclusos: espetosExecutivo.map(e => e.nome),
       detalhesEspetos: espetosExecutivo,
+      cozinhaItemId: criarIdItemCozinha(),
       enviadoCozinha: false
     }
 
@@ -875,6 +884,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       componentesInclusos,
       observacaoCombo: upgrade ? 'Upgrade Batata Mestre + R$ 10,00' : '',
       observacao: observacaoCombo.trim(),
+      cozinhaItemId: criarIdItemCozinha(),
       enviadoCozinha: false
     }
 
@@ -941,6 +951,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
       espetoEscolhido: espetoLanche.nome,
       espetosInclusos: [espetoLanche.nome],
       observacao: observacaoLanche.trim(),
+      cozinhaItemId: criarIdItemCozinha(),
       enviadoCozinha: false
     }
 
@@ -997,16 +1008,46 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
     if (!comandaAtual) return alert('Selecione uma comanda.')
     if (enviandoCozinha) return
 
-    const todosItens = comandaAtual.itens || []
-    const novosItens = todosItens.filter(item => item.enviadoCozinha !== true)
-
-    if (novosItens.length === 0) {
-      return alert('Não há itens novos para enviar à cozinha.')
-    }
-
     setEnviandoCozinha(true)
 
     try {
+      // Garante um identificador único e estável para cada item da comanda.
+      let todosItens = (comandaAtual.itens || []).map(item => ({
+        ...item,
+        cozinhaItemId: item.cozinhaItemId || criarIdItemCozinha()
+      }))
+
+      const tinhaItemSemId = (comandaAtual.itens || []).some(item => !item.cozinhaItemId)
+
+      if (tinhaItemSemId) {
+        await updateDoc(doc(db, 'comandas', comandaAtual.id), {
+          itens: todosItens
+        })
+      }
+
+      // Usa o Firebase como fonte da verdade: verifica quais IDs dessa comanda
+      // já apareceram em pedidos enviados hoje.
+      const snapshotPedidos = await getDocs(collection(db, 'pedidosCozinha'))
+      const idsJaEnviados = new Set()
+
+      snapshotPedidos.docs.forEach(d => {
+        const p = d.data()
+        if (
+          p.comandaId === comandaAtual.id &&
+          p.dataPedido === hoje()
+        ) {
+          ;(p.itens || []).forEach(item => {
+            if (item.cozinhaItemId) idsJaEnviados.add(item.cozinhaItemId)
+          })
+        }
+      })
+
+      const novosItens = todosItens.filter(item => !idsJaEnviados.has(item.cozinhaItemId))
+
+      if (novosItens.length === 0) {
+        return alert('Não há itens novos para enviar à cozinha.')
+      }
+
       const sequenciaRef = doc(db, 'controle', 'sequenciaCozinha')
       const pedidoRef = doc(collection(db, 'pedidosCozinha'))
       let numeroGerado = 0
@@ -1041,15 +1082,16 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
           criadoEm: serverTimestamp()
         })
 
-        const itensMarcados = todosItens.map(item => {
-          if (item.enviadoCozinha === true) return item
-
-          return {
-            ...item,
-            enviadoCozinha: true,
-            pedidoCozinhaNumero: numeroGerado
-          }
-        })
+        const idsNovoPedido = new Set(novosItens.map(item => item.cozinhaItemId))
+        const itensMarcados = todosItens.map(item =>
+          idsNovoPedido.has(item.cozinhaItemId)
+            ? {
+                ...item,
+                enviadoCozinha: true,
+                pedidoCozinhaNumero: numeroGerado
+              }
+            : item
+        )
 
         transaction.update(doc(db, 'comandas', comandaAtual.id), {
           itens: itensMarcados,
@@ -1058,7 +1100,10 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
         })
       })
 
-      alert(`Pedido nº ${String(numeroGerado).padStart(4, '0')} enviado para a cozinha!`)
+      alert(
+        `Pedido nº ${String(numeroGerado).padStart(4, '0')} enviado para a cozinha!\n` +
+        `${novosItens.length} item(ns) novo(s).`
+      )
       setMostrarFilaCozinha(true)
     } catch (error) {
       console.error('Erro ao enviar pedido para cozinha:', error)
