@@ -221,6 +221,50 @@ const agruparCardapio = (itens) => {
 }
 
 export default function App() {
+  // Sprint 1.2H-B — monitor do Agente Windows
+  const [agenteImpressaoStatus, setAgenteImpressaoStatus] = useState({
+    online: false,
+    computador: '',
+    impressora: '',
+    atualizadoEmISO: ''
+  })
+
+  useEffect(() => {
+    const refAgente = doc(db, 'statusSistema', 'agenteImpressao')
+
+    const atualizar = dados => {
+      const iso = dados?.atualizadoEmISO || ''
+      const idadeMs = iso ? Date.now() - new Date(iso).getTime() : Infinity
+      setAgenteImpressaoStatus({
+        online: Boolean(dados?.online) && idadeMs <= 30000,
+        computador: dados?.computador || '',
+        impressora: dados?.impressora || '',
+        atualizadoEmISO: iso
+      })
+    }
+
+    const unsubscribeAgente = onSnapshot(
+      refAgente,
+      snap => atualizar(snap.exists() ? snap.data() : null),
+      () => atualizar(null)
+    )
+
+    // Mesmo sem mudança no Firebase, reavalia a idade do heartbeat.
+    const timerAgente = setInterval(() => {
+      setAgenteImpressaoStatus(anterior => {
+        const idadeMs = anterior.atualizadoEmISO
+          ? Date.now() - new Date(anterior.atualizadoEmISO).getTime()
+          : Infinity
+        return { ...anterior, online: idadeMs <= 30000 }
+      })
+    }, 5000)
+
+    return () => {
+      try { unsubscribeAgente() } catch {}
+      clearInterval(timerAgente)
+    }
+  }, [])
+
   const [loading, setLoading] = useState(true)
   const [comandas, setComandas] = useState([])
   const [historico, setHistorico] = useState([])
@@ -241,6 +285,7 @@ export default function App() {
   const [valorContadoCaixa, setValorContadoCaixa] = useState('')
   const [historicoCaixas, setHistoricoCaixas] = useState([])
   const [dataHistoricoCaixa, setDataHistoricoCaixa] = useState(hoje())
+  const [mostrarDashboardGerencial, setMostrarDashboardGerencial] = useState(false)
   const [estoque, setEstoque] = useState(estoqueInicial)
   const [estoqueInicialDia, setEstoqueInicialDia] = useState({})
   const [busca, setBusca] = useState('')
@@ -262,9 +307,9 @@ export default function App() {
   const [pedidosCozinha, setPedidosCozinha] = useState([])
   const [mostrarFilaCozinha, setMostrarFilaCozinha] = useState(false)
   const [enviandoCozinha, setEnviandoCozinha] = useState(false)
-  const [postoImpressaoAtivo, setPostoImpressaoAtivo] = useState(
-    localStorage.getItem('mestre_posto_impressao') === '1'
-  )
+  // Impressão automática oficial: Agente Windows.
+  // O navegador fica sempre fora da fila para não "roubar" pedidos do agente.
+  const [postoImpressaoAtivo, setPostoImpressaoAtivo] = useState(false)
   const [pedidoEmImpressao, setPedidoEmImpressao] = useState(null)
   const [ultimaSincronizacaoCozinha, setUltimaSincronizacaoCozinha] = useState(null)
   const [agoraCozinha, setAgoraCozinha] = useState(Date.now())
@@ -291,6 +336,51 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('atendente_mestre', atendente)
   }, [atendente])
+
+  useEffect(() => {
+    // Migração: versões antigas podiam deixar o navegador como posto de impressão.
+    // Nesta versão somente o Agente Windows deve consumir statusImpressao='aguardando'.
+    localStorage.setItem('mestre_posto_impressao', '0')
+    setPostoImpressaoAtivo(false)
+
+    const recuperarPedidosPresos = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'pedidosCozinha'))
+        const agora = Date.now()
+
+        const presos = snapshot.docs.filter(d => {
+          const p = d.data()
+          if (p.statusImpressao !== 'imprimindo' || p.status === 'entregue') return false
+
+          const ts = p.impressaoIniciadaEm
+          let inicio = 0
+
+          if (ts?.toDate) inicio = ts.toDate().getTime()
+          else if (ts?.seconds) inicio = Number(ts.seconds) * 1000
+          else if (p.criadoEmISO) inicio = new Date(p.criadoEmISO).getTime()
+
+          // Só recupera impressões presas há mais de 2 minutos.
+          return !inicio || (agora - inicio) > 120000
+        })
+
+        await Promise.all(
+          presos.map(d =>
+            updateDoc(doc(db, 'pedidosCozinha', d.id), {
+              statusImpressao: 'aguardando'
+            })
+          )
+        )
+
+        if (presos.length) {
+          console.log(`Impressão: ${presos.length} pedido(s) preso(s) devolvido(s) para aguardando.`)
+        }
+      } catch (error) {
+        console.error('Falha ao recuperar fila de impressão:', error)
+      }
+    }
+
+    recuperarPedidosPresos()
+  }, [])
 
   useEffect(() => {
     const unsubComandas = onSnapshot(collection(db, 'comandas'), snapshot => {
@@ -647,7 +737,8 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
         : (item.espetosInclusos || [])
 
       listaEspetos.forEach(nomeEspeto => {
-        const custo = custoProduto(nomeEspeto)
+        const detalheEspeto = (item.detalhesEspetos || []).find(e => e.nome === nomeEspeto)
+        const custo = Number(detalheEspeto?.precoCusto ?? custoProduto(nomeEspeto) ?? 0)
         totalCusto += custo
         quantidadeEspetosInternos += 1
 
@@ -681,7 +772,7 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
     }
 
     const nomeEstoque = item.estoqueNome || item.nome
-    const custo = custoProduto(nomeEstoque)
+    const custo = Number(item.precoCusto ?? custoProduto(nomeEstoque) ?? 0)
     totalCusto += custo
 
     const categoria = item.categoria || ''
@@ -1423,7 +1514,9 @@ const calcularFinanceiroComanda = (comanda, historicoBase = historico) => {
           cliente: comandaAtual.cliente || '',
           atendente: comandaAtual.atendente || atendente || '',
           itens: novosItens,
-          status: 'novo',
+          // Sprint 1.2H-A: pedido enviado já entra em preparo.
+          status: 'preparo',
+          statusAtualizadoEm: serverTimestamp(),
           statusImpressao: 'aguardando',
           criadoEmISO: new Date().toISOString(),
           criadoEm: serverTimestamp()
@@ -1735,75 +1828,12 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
     imprimirPedidoTermico(pedido, false)
   }
 
-  useEffect(() => {
-    if (!postoImpressaoAtivo || pedidoEmImpressao) return
-
-    const pendente = pedidosCozinha.find(p =>
-      p.statusImpressao !== 'impresso' &&
-      p.statusImpressao !== 'imprimindo'
-    )
-
-    if (!pendente) return
-
-    const processar = async () => {
-      setPedidoEmImpressao(pendente.id)
-
-      try {
-        // Reserva o pedido para reduzir impressão duplicada entre estações.
-        const ref = doc(db, 'pedidosCozinha', pendente.id)
-        const reservado = await runTransaction(db, async transaction => {
-          const snap = await transaction.get(ref)
-          if (!snap.exists()) return false
-
-          const atual = snap.data()
-          if (atual.statusImpressao === 'impresso' || atual.statusImpressao === 'imprimindo') {
-            return false
-          }
-
-          transaction.update(ref, {
-            statusImpressao: 'imprimindo',
-            impressaoIniciadaEm: serverTimestamp()
-          })
-          return true
-        })
-
-        if (!reservado) return
-
-        const abriu = imprimirPedidoTermico(pendente, true)
-
-        if (!abriu) {
-          await updateDoc(ref, { statusImpressao: 'aguardando' })
-          return
-        }
-
-        // No navegador não existe confirmação confiável de que o papel saiu;
-        // marcamos como impresso depois que o diálogo/comando foi disparado.
-        setTimeout(async () => {
-          try {
-            await updateDoc(ref, {
-              statusImpressao: 'impresso',
-              impressoEm: serverTimestamp(),
-              status: 'preparo',
-              preparoIniciadoEm: serverTimestamp()
-            })
-          } catch (e) {
-            console.error('Erro ao confirmar impressão:', e)
-          }
-        }, 1800)
-      } catch (error) {
-        console.error('Erro na impressão automática:', error)
-        try {
-          await updateDoc(doc(db, 'pedidosCozinha', pendente.id), {
-            statusImpressao: 'aguardando'
-          })
-        } catch (e) {}
-      } finally {
-        setTimeout(() => setPedidoEmImpressao(null), 2200)
-      }
-    }
-
-    processar()
-  }, [pedidosCozinha, postoImpressaoAtivo, pedidoEmImpressao])
+  // IMPORTANTE:
+  // A impressão automática pelo navegador foi desativada de propósito.
+  // Ela competia com o Agente Windows pelo mesmo pedido no Firestore e podia
+  // marcar um pedido como "imprimindo/impresso" antes do agente recebê-lo.
+  // O envio para cozinha continua criando statusImpressao='aguardando';
+  // o Agente Windows é o único responsável por consumir essa fila.
 
   const imprimirTexto = (texto) => {
     tocarSom('/impressao.mp3')
@@ -1953,8 +1983,26 @@ Obrigado e volte sempre!
     try {
       const dataFechamento = hoje()
 
+      // Sprint 1.2G-C: congela os custos usados nesta venda.
+      // Assim, futuras alterações no cardápio não modificam a margem histórica.
+      const itensComCustoHistorico = (comandaAtual.itens || []).map(item => ({
+        ...item,
+        precoCusto: Number(item.precoCusto ?? custoProduto(item.estoqueNome || item.nome) ?? 0),
+        detalhesEspetos: (item.detalhesEspetos || []).map(espeto => ({
+          ...espeto,
+          precoCusto: Number(espeto.precoCusto ?? custoProduto(espeto.nome) ?? 0)
+        })),
+        componentesInclusos: (item.componentesInclusos || []).map(comp => ({
+          ...comp,
+          precoCusto: Number(comp.precoCusto ?? custoProduto(comp.nome) ?? 0)
+        }))
+      }))
+
       await addDoc(collection(db, 'historico'), {
         ...comandaAtual,
+        itens: itensComCustoHistorico,
+        custoHistoricoCongelado: true,
+        versaoCustoHistorico: '1.2G-C',
         pagamento: ehCliente ? pagamento : 'interno',
         formaPagamento: ehCliente ? nomePagamento : 'Consumo interno',
         valorRecebido: ehCliente && pagamento === 'dinheiro'
@@ -2167,6 +2215,154 @@ const excluirComandaAberta = async () => {
   const rel = relatorioPorData(dataRelatorio)
   const totalCaixaData = rel.caixaData.dinheiro + rel.caixaData.pix + rel.caixaData.cartao
   const perdaEstimada = rel.conferenciaEstoque.reduce((acc, item) => acc + item.valorDiferenca, 0)
+
+  const comandasClientesGerencial = rel.comandas.filter(c =>
+    (c.tipoComanda || 'Cliente') === 'Cliente'
+  )
+
+  const quantidadeComandasClientesGerencial = comandasClientesGerencial.length
+  const ticketMedioGerencial = quantidadeComandasClientesGerencial > 0
+    ? rel.totalVendas / quantidadeComandasClientesGerencial
+    : 0
+
+  // Sprint 1.2G-C.1:
+  // Relatórios históricos NÃO podem mudar quando o custo atual do cardápio muda.
+  // Prioridade:
+  // 1) totalCusto já gravado no fechamento da comanda;
+  // 2) custos congelados dentro dos itens;
+  // 3) custo atual somente como último fallback para registros muito antigos.
+  const calcularCustoItemHistoricoGerencial = (item) => {
+    if (item.tipo === 'executivo' || item.tipo === 'combo' || item.tipo === 'lanche') {
+      const detalhes = item.detalhesEspetos || []
+      const nomes = detalhes.length
+        ? detalhes.map(e => e.nome)
+        : (item.espetosInclusos || [])
+
+      let custo = nomes.reduce((acc, nome) => {
+        const detalhe = detalhes.find(e => e.nome === nome)
+        return acc + Number(detalhe?.precoCusto ?? custoProduto(nome) ?? 0)
+      }, 0)
+
+      if (item.tipo === 'combo') {
+        custo += (item.componentesInclusos || []).reduce((acc, comp) =>
+          acc + Number(comp.precoCusto ?? custoProduto(comp.nome) ?? 0) * Number(comp.qtd || 1), 0
+        )
+      }
+
+      return custo
+    }
+
+    return Number(item.precoCusto ?? custoProduto(item.estoqueNome || item.nome) ?? 0)
+  }
+
+  const custoVendasGerencial = comandasClientesGerencial.reduce((acc, c) => {
+    if (c.totalCusto !== undefined && c.totalCusto !== null) {
+      return acc + Number(c.totalCusto || 0)
+    }
+
+    return acc + (c.itens || []).reduce(
+      (subtotal, item) => subtotal + calcularCustoItemHistoricoGerencial(item),
+      0
+    )
+  }, 0)
+
+  const itensSemCustoGerencial = itensCardapio
+    .filter(item => item.ativo !== false && Number(item.precoCusto || 0) <= 0)
+    .sort((a, b) => String(a.categoria || '').localeCompare(String(b.categoria || '')) || String(a.nome || '').localeCompare(String(b.nome || '')))
+
+  const margemBrutaGerencial = rel.totalVendas - custoVendasGerencial
+  const margemBrutaPercentualGerencial = rel.totalVendas > 0
+    ? (margemBrutaGerencial / rel.totalVendas) * 100
+    : 0
+
+  const rankingProdutosGerencial = Object.entries(rel.produtos || {})
+    .map(([nome, dados]) => ({
+      nome,
+      qtd: Number(dados.qtd || 0),
+      total: Number(dados.total || 0)
+    }))
+    .sort((a, b) => b.qtd - a.qtd || b.total - a.total)
+
+  const produtoMaisVendidoGerencial = rankingProdutosGerencial[0] || null
+  const produtoMenosVendidoGerencial = rankingProdutosGerencial.length
+    ? [...rankingProdutosGerencial].sort((a, b) => a.qtd - b.qtd || a.total - b.total)[0]
+    : null
+
+  const caixaGerencialSelecionado = historicoCaixas.find(c =>
+    (c.data || c.id) === dataRelatorio
+  ) || null
+
+  const diferencaCaixaGerencial = Number(caixaGerencialSelecionado?.diferenca || 0)
+  const suprimentosGerencial = Number(caixaGerencialSelecionado?.totalSuprimentos || 0)
+  const sangriasGerencial = Number(caixaGerencialSelecionado?.totalSangrias || 0)
+
+  const imprimirDashboardGerencial = () => {
+    const linhasRanking = rankingProdutosGerencial.slice(0, 15)
+      .map((p, i) => `${i + 1}. ${p.nome} — ${p.qtd} un. — R$ ${formatarMoedaBR(p.total)}`)
+      .join('\n')
+
+    const texto = `
+RELATÓRIO GERENCIAL — ${formatarDataBR(dataRelatorio)}
+MESTRE DO ESPETO
+
+FATURAMENTO
+Faturamento clientes: R$ ${formatarMoedaBR(rel.totalVendas)}
+Comandas de clientes: ${quantidadeComandasClientesGerencial}
+Ticket médio: R$ ${formatarMoedaBR(ticketMedioGerencial)}
+Itens registrados: ${rel.totalItens}
+
+FORMAS DE PAGAMENTO
+Dinheiro: R$ ${formatarMoedaBR(rel.caixaData.dinheiro)}
+Pix: R$ ${formatarMoedaBR(rel.caixaData.pix)}
+Cartão: R$ ${formatarMoedaBR(rel.caixaData.cartao)}
+
+RESULTADO BRUTO ESTIMADO
+Custo conhecido das vendas: R$ ${formatarMoedaBR(custoVendasGerencial)}
+Margem bruta estimada: R$ ${formatarMoedaBR(margemBrutaGerencial)}
+Margem bruta estimada: ${margemBrutaPercentualGerencial.toFixed(1).replace('.', ',')}%
+
+CONSUMO INTERNO
+Custo do consumo interno: R$ ${formatarMoedaBR(rel.totalConsumoInterno)}
+Total a repassar: R$ ${formatarMoedaBR(rel.totalRepasseInterno)}
+
+CAIXA
+Suprimentos: R$ ${formatarMoedaBR(suprimentosGerencial)}
+Sangrias: R$ ${formatarMoedaBR(sangriasGerencial)}
+Diferença de caixa: R$ ${formatarMoedaBR(diferencaCaixaGerencial)}
+Status: ${caixaGerencialSelecionado?.status === 'fechado' ? 'Fechado' : caixaGerencialSelecionado?.status === 'aberto' ? 'Aberto' : 'Sem caixa registrado'}
+
+DESTAQUES
+Mais vendido: ${produtoMaisVendidoGerencial ? `${produtoMaisVendidoGerencial.nome} — ${produtoMaisVendidoGerencial.qtd} un.` : 'Sem vendas'}
+Menos vendido: ${produtoMenosVendidoGerencial ? `${produtoMenosVendidoGerencial.nome} — ${produtoMenosVendidoGerencial.qtd} un.` : 'Sem vendas'}
+
+RANKING DE PRODUTOS
+${linhasRanking || 'Sem produtos vendidos.'}
+
+Observação: custo e margem são estimativas baseadas nos custos cadastrados no sistema.
+Itens sem custo cadastrado entram com custo R$ 0,00.
+`
+
+    const janela = window.open('', '_blank', 'width=760,height=900')
+    if (!janela) return alert('O navegador bloqueou a janela de impressão.')
+
+    janela.document.write(`
+      <html>
+        <head>
+          <title>Relatório Gerencial ${formatarDataBR(dataRelatorio)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; white-space: pre-wrap; color: #111; }
+            h1 { font-size: 22px; }
+            pre { font-family: Arial, sans-serif; white-space: pre-wrap; line-height: 1.5; font-size: 14px; }
+          </style>
+        </head>
+        <body><pre>${texto}</pre></body>
+      </html>
+    `)
+    janela.document.close()
+    janela.focus()
+    setTimeout(() => janela.print(), 250)
+  }
+
 
  const imprimirRelatorioData = () => {
   const consumoInternoTexto = Object.keys(rel.consumoInterno || {}).length
@@ -2495,6 +2691,23 @@ MESTRE DO ESPETO PDV
   if (loading) {
     return (
       <div style={styles.splash}>
+      <div style={{
+        margin: '10px 0 14px',
+        padding: '10px 14px',
+        borderRadius: 10,
+        fontWeight: 800,
+        background: agenteImpressaoStatus.online ? '#123d20' : '#4a1717',
+        border: `1px solid ${agenteImpressaoStatus.online ? '#25c75a' : '#ff5a5a'}`
+      }}>
+        {agenteImpressaoStatus.online ? '🟢' : '🔴'} Agente de impressão: {agenteImpressaoStatus.online ? 'ONLINE' : 'OFFLINE'}
+        {agenteImpressaoStatus.online && agenteImpressaoStatus.impressora
+          ? ` — ${agenteImpressaoStatus.impressora}`
+          : ''}
+        {!agenteImpressaoStatus.online
+          ? ' — Verifique o computador, o agente e a conexão.'
+          : ''}
+      </div>
+
         <img src="/logo.png" alt="Mestre do Espeto" style={styles.logoSplash} />
         <h1>MESTRE DO ESPETO</h1>
         <p>Carregando sistema...</p>
@@ -3389,7 +3602,14 @@ MESTRE DO ESPETO PDV
 
   {mostrarGestaoCardapio && (
     <>
-      <h2>⚙️ Gestão do Cardápio</h2>
+      <h2>⚙️ Gestão do Cardápio e Custos</h2>
+
+      <div style={{ ...styles.box, border: itensSemCustoGerencial.length ? '1px solid #ffb300' : '1px solid #2e7d32' }}>
+        <strong>💰 Controle de custos</strong><br />
+        {itensSemCustoGerencial.length > 0
+          ? <>⚠️ <strong>{itensSemCustoGerencial.length} produto(s)</strong> sem custo cadastrado. Use <strong>Editar</strong> para informar o custo unitário.</>
+          : <>✅ Todos os produtos ativos possuem custo cadastrado.</>}
+      </div>
 
       <div style={{
         background: '#3b2600',
@@ -3419,7 +3639,14 @@ MESTRE DO ESPETO PDV
             <div key={item.id || item.nome} style={styles.itemLinha}>
               <span>
                 <strong>{item.nome}</strong><br />
-                Venda: R$ {Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)} | Custo: R$ {Number(item.precoCusto ?? 0).toFixed(2)}
+                Venda: R$ {formatarMoedaBR(item.precoVenda ?? item.preco ?? 0)} | Custo: R$ {formatarMoedaBR(item.precoCusto ?? 0)}<br />
+                <small>
+                  Lucro bruto unit.: R$ {formatarMoedaBR(Number(item.precoVenda ?? item.preco ?? 0) - Number(item.precoCusto ?? 0))}
+                  {' • '}Margem: {Number(item.precoVenda ?? item.preco ?? 0) > 0
+                    ? (((Number(item.precoVenda ?? item.preco ?? 0) - Number(item.precoCusto ?? 0)) / Number(item.precoVenda ?? item.preco ?? 0)) * 100).toFixed(1).replace('.', ',')
+                    : '0,0'}%
+                  {Number(item.precoCusto || 0) <= 0 ? ' ⚠️ SEM CUSTO' : ''}
+                </small>
               </span>
 
               <span>
@@ -3603,6 +3830,145 @@ MESTRE DO ESPETO PDV
             {c.status === 'fechado' ? ` — Diferença R$ ${formatarMoedaBR(c.diferenca)}` : ''}
           </button>
         ))}
+      </div>
+    )}
+  </div>
+)}
+
+{adminLiberado && (
+  <div style={styles.card}>
+    <button
+      onClick={() => setMostrarDashboardGerencial(!mostrarDashboardGerencial)}
+      style={{ ...styles.green, width: '100%', minHeight: 54, fontWeight: 900 }}
+    >
+      📊 {mostrarDashboardGerencial ? 'Ocultar Dashboard Gerencial' : 'Abrir Dashboard Gerencial'}
+    </button>
+
+    {mostrarDashboardGerencial && (
+      <div style={{ marginTop: 14 }}>
+        <h2>📊 Dashboard Gerencial — {formatarDataBR(dataRelatorio)}</h2>
+
+        <input
+          type="date"
+          value={dataRelatorio}
+          onChange={e => setDataRelatorio(e.target.value)}
+          style={styles.input}
+        />
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: 10,
+          marginTop: 12
+        }}>
+          <div style={styles.box}>
+            <small>Faturamento</small><br />
+            <strong style={{ fontSize: 22 }}>R$ {formatarMoedaBR(rel.totalVendas)}</strong>
+          </div>
+          <div style={styles.box}>
+            <small>Comandas clientes</small><br />
+            <strong style={{ fontSize: 22 }}>{quantidadeComandasClientesGerencial}</strong>
+          </div>
+          <div style={styles.box}>
+            <small>Ticket médio</small><br />
+            <strong style={{ fontSize: 22 }}>R$ {formatarMoedaBR(ticketMedioGerencial)}</strong>
+          </div>
+          <div style={styles.box}>
+            <small>Itens registrados</small><br />
+            <strong style={{ fontSize: 22 }}>{rel.totalItens}</strong>
+          </div>
+        </div>
+
+        <div style={{ ...styles.box, marginTop: 12 }}>
+          <strong>💳 Formas de pagamento</strong><br />
+          💵 Dinheiro: R$ {formatarMoedaBR(rel.caixaData.dinheiro)}<br />
+          📱 Pix: R$ {formatarMoedaBR(rel.caixaData.pix)}<br />
+          💳 Cartão: R$ {formatarMoedaBR(rel.caixaData.cartao)}
+        </div>
+
+        {itensSemCustoGerencial.length > 0 && (
+          <div style={{ ...styles.box, border: '1px solid #ffb300', background: '#3b2600' }}>
+            ⚠️ <strong>{itensSemCustoGerencial.length} produto(s) ativo(s) estão sem custo cadastrado.</strong><br />
+            <small>A margem abaixo ainda é parcial. Corrija os custos em ⚙️ Gestão do Cardápio e Custos.</small>
+          </div>
+        )}
+
+        <div style={styles.box}>
+          <strong>📈 Resultado bruto estimado</strong><br />
+          Custo conhecido das vendas: <strong>R$ {formatarMoedaBR(custoVendasGerencial)}</strong><br />
+          Margem bruta estimada: <strong>R$ {formatarMoedaBR(margemBrutaGerencial)}</strong><br />
+          Margem estimada: <strong>{margemBrutaPercentualGerencial.toFixed(1).replace('.', ',')}%</strong><br />
+          <small>
+            * Vendas fechadas preservam o custo registrado no momento do fechamento. Registros antigos sem custo continuam estimados.
+          </small>
+        </div>
+
+        <div style={styles.box}>
+          <strong>👥 Consumo interno</strong><br />
+          Custo: R$ {formatarMoedaBR(rel.totalConsumoInterno)}<br />
+          A repassar: R$ {formatarMoedaBR(rel.totalRepasseInterno)}
+        </div>
+
+        <div style={styles.box}>
+          <strong>💵 Conferência do caixa</strong><br />
+          Status: <strong>{
+            caixaGerencialSelecionado?.status === 'fechado'
+              ? '🔒 Fechado'
+              : caixaGerencialSelecionado?.status === 'aberto'
+                ? '🟢 Aberto'
+                : 'Sem caixa registrado'
+          }</strong><br />
+          Suprimentos: R$ {formatarMoedaBR(suprimentosGerencial)}<br />
+          Sangrias: R$ {formatarMoedaBR(sangriasGerencial)}<br />
+          Diferença: <strong>R$ {formatarMoedaBR(diferencaCaixaGerencial)}</strong>
+        </div>
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: 10
+        }}>
+          <div style={styles.box}>
+            <strong>🏆 Mais vendido</strong><br />
+            {produtoMaisVendidoGerencial
+              ? <>{produtoMaisVendidoGerencial.nome}<br />{produtoMaisVendidoGerencial.qtd} un.</>
+              : 'Sem vendas nesta data'}
+          </div>
+          <div style={styles.box}>
+            <strong>📉 Menos vendido</strong><br />
+            {produtoMenosVendidoGerencial
+              ? <>{produtoMenosVendidoGerencial.nome}<br />{produtoMenosVendidoGerencial.qtd} un.</>
+              : 'Sem vendas nesta data'}
+          </div>
+        </div>
+
+        {rankingProdutosGerencial.length > 0 && (
+          <div style={{ ...styles.box, marginTop: 10 }}>
+            <strong>🥇 Ranking de produtos</strong>
+            {rankingProdutosGerencial.slice(0, 10).map((p, index) => (
+              <div
+                key={p.nome}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                  padding: '7px 0',
+                  borderBottom: '1px solid rgba(255,255,255,0.12)'
+                }}
+              >
+                <span>{index + 1}. {p.nome}</span>
+                <strong>{p.qtd} un. • R$ {formatarMoedaBR(p.total)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={imprimirDashboardGerencial}
+          style={{ ...styles.green, width: '100%', marginTop: 12, minHeight: 50 }}
+        >
+          🧾 IMPRIMIR RELATÓRIO GERENCIAL
+        </button>
       </div>
     )}
   </div>
