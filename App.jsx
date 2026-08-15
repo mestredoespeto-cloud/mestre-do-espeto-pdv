@@ -1725,14 +1725,15 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
 
             .marca {
               text-align: center;
-              font-size: 14px;
+              font-size: 17px;
+              line-height: 1.1;
               font-weight: 900;
-              margin-bottom: 2px;
+              margin-bottom: 3px;
             }
 
             .pedido-numero {
               text-align: center;
-              font-size: 21px;
+              font-size: 25px;
               line-height: 1;
               font-weight: 900;
               margin: 3px 0 5px 0;
@@ -1742,14 +1743,15 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
             }
 
             .comanda {
-              font-size: 17px;
-              line-height: 1.05;
+              font-size: 19px;
+              line-height: 1.08;
               font-weight: 900;
               margin: 4px 0;
             }
 
             .meta {
-              font-size: 11px;
+              font-size: 14px;
+              line-height: 1.15;
               font-weight: 700;
               margin-bottom: 5px;
             }
@@ -1759,20 +1761,20 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
             }
 
             .item-titulo {
-              font-size: 15px;
-              line-height: 1.08;
+              font-size: 18px;
+              line-height: 1.12;
               font-weight: 900;
             }
 
             .detalhe {
-              font-size: 12px;
-              line-height: 1.1;
+              font-size: 15px;
+              line-height: 1.15;
               margin-top: 1px;
             }
 
             .obs {
-              font-size: 15px;
-              line-height: 1.08;
+              font-size: 17px;
+              line-height: 1.1;
               font-weight: 900;
               border: 2px solid #000;
               padding: 3px;
@@ -1787,9 +1789,9 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
 
             .fim {
               border-top: 2px solid #000;
-              margin-top: 5px;
-              padding-top: 2px;
-              height: 4mm;
+              margin-top: 4px;
+              padding-top: 1px;
+              height: 1mm;
             }
           </style>
         </head>
@@ -1837,11 +1839,113 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
 
   const imprimirTexto = (texto) => {
     tocarSom('/impressao.mp3')
-    const win = window.open('', '', 'width=340,height=650')
-    win.document.write(`<pre style="font-family:monospace;font-size:14px;">${texto}</pre>`)
-    win.document.write('<button onclick="window.print()">IMPRIMIR</button>')
-    win.print()
+
+    const win = window.open('', '', 'width=360,height=520')
+
+    if (!win) {
+      alert('O navegador bloqueou a janela de impressão.')
+      return
+    }
+
+    const textoSeguro = String(texto || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+
+    win.document.open()
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>Impressão Mestre do Espeto</title>
+          <style>
+            @page {
+              size: 58mm auto;
+              margin: 0;
+            }
+
+            * {
+              box-sizing: border-box;
+            }
+
+            html, body {
+              margin: 0 !important;
+              padding: 0 !important;
+              width: 58mm !important;
+              min-width: 58mm !important;
+              background: #fff;
+              color: #000;
+            }
+
+            body {
+              font-family: "Courier New", Courier, monospace;
+            }
+
+            #cupom {
+              width: 58mm;
+              margin: 0;
+              padding: 1.5mm 1.5mm 0;
+              font-family: "Courier New", Courier, monospace;
+              font-size: 20px;
+              line-height: 1.18;
+              font-weight: 600;
+              white-space: pre-wrap;
+              overflow-wrap: break-word;
+              word-break: normal;
+            }
+
+            #acoes {
+              width: 58mm;
+              padding: 8px 6px 0;
+            }
+
+            #acoes button {
+              width: 100%;
+              min-height: 46px;
+              font-size: 18px;
+              font-weight: 800;
+            }
+
+            @media print {
+              html, body {
+                width: 58mm !important;
+                height: auto !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: visible !important;
+              }
+
+              #cupom {
+                width: 58mm !important;
+                height: auto !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 1mm 1.5mm 0 !important;
+                font-size: 20px !important;
+                line-height: 1.16 !important;
+              }
+
+              #acoes {
+                display: none !important;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div id="cupom">${textoSeguro}</div>
+          <div id="acoes">
+            <button type="button" onclick="window.print()">🖨️ IMPRIMIR</button>
+          </div>
+        </body>
+      </html>
+    `)
+    win.document.close()
+    win.focus()
   }
+
 
   const descricaoItem = (item) => {
     if (item.tipo === 'executivo') {
