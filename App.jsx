@@ -202,17 +202,50 @@ const montarItensPadraoCardapio = () => {
   return itens
 }
 
+const normalizarCategoriaCardapio = (categoria = '') => {
+  const original = String(categoria || '').trim()
+  const chave = original
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+
+  const mapa = {
+    'bebidas': 'Bebidas',
+    'bebida': 'Bebidas',
+    'espetos': 'Espetos',
+    'espeto': 'Espetos',
+    'espetos tradicionais': 'Espetos',
+    'espetos premium': 'Espetos Premium Avulso',
+    'espetos premium avulso': 'Espetos Premium Avulso',
+    'premium': 'Espetos Premium Avulso',
+    'executivos': 'Executivos',
+    'executivo': 'Executivos',
+    'monte seu prato': 'Executivos',
+    'adicionais': 'Adicionais',
+    'adicional': 'Adicionais',
+    'porcoes': 'Porções',
+    'porcao': 'Porções',
+    'combos': 'Combos',
+    'combo': 'Combos',
+    'lanche': 'Lanche no Espeto',
+    'lanche no espeto': 'Lanche no Espeto'
+  }
+
+  return mapa[chave] || original || 'Outros'
+}
+
 const agruparCardapio = (itens) => {
   const grupos = {}
 
   itens
     .filter(item => item.ativo !== false)
     .forEach(item => {
-      const categoria = item.categoria || 'Outros'
+      const categoria = normalizarCategoriaCardapio(item.categoria)
       if (!grupos[categoria]) grupos[categoria] = []
 
       grupos[categoria].push({
         ...item,
+        categoria,
         preco: Number(item.precoVenda ?? item.preco ?? 0)
       })
     })
@@ -286,6 +319,7 @@ export default function App() {
   const [historicoCaixas, setHistoricoCaixas] = useState([])
   const [dataHistoricoCaixa, setDataHistoricoCaixa] = useState(hoje())
   const [mostrarDashboardGerencial, setMostrarDashboardGerencial] = useState(false)
+  const [mostrarRelatorioDetalhado, setMostrarRelatorioDetalhado] = useState(false)
   const [estoque, setEstoque] = useState(estoqueInicial)
   const [estoqueInicialDia, setEstoqueInicialDia] = useState({})
   const [busca, setBusca] = useState('')
@@ -393,7 +427,7 @@ export default function App() {
 
     const unsubEstoque = onSnapshot(doc(db, 'controle', 'estoque'), async snap => {
       if (snap.exists()) {
-        setEstoque({ ...estoqueInicial, ...snap.data() })
+        setEstoque(snap.data())
       } else {
         await setDoc(doc(db, 'controle', 'estoque'), estoqueInicial)
       }
@@ -2012,6 +2046,59 @@ Obrigado e volte sempre!
     imprimirTexto(texto)
   }
 
+  // Comprovante não fiscal de uma venda já fechada; não movimenta caixa ou estoque.
+  const emitirComprovanteDescritivo = (venda) => {
+    if (!venda || (venda.tipoComanda || 'Cliente') !== 'Cliente') {
+      return alert('O comprovante descritivo está disponível apenas para vendas de clientes fechadas.')
+    }
+    let cnpj = localStorage.getItem('mestre_cnpj_comprovante') || ''
+    if (!/^\d{14}$/.test(cnpj.replace(/\D/g, ''))) {
+      const informado = prompt('Informe o CNPJ do Mestre do Espeto (14 dígitos):', cnpj)
+      if (informado === null) return
+      cnpj = informado.replace(/\D/g, '')
+      if (!/^\d{14}$/.test(cnpj)) return alert('CNPJ inválido: informe 14 dígitos.')
+      localStorage.setItem('mestre_cnpj_comprovante', cnpj)
+    }
+    const cnpjNumeros = cnpj.replace(/\D/g, '')
+    const cnpjFormatado = `${cnpjNumeros.slice(0, 2)}.${cnpjNumeros.slice(2, 5)}.${cnpjNumeros.slice(5, 8)}/${cnpjNumeros.slice(8, 12)}-${cnpjNumeros.slice(12)}`
+    const dataHora = venda.fechadoEm || venda.fechadoEmISO || ''
+    const data = dataHora && !Number.isNaN(new Date(dataHora).getTime())
+      ? new Date(dataHora).toLocaleString('pt-BR')
+      : formatarDataBR(venda.dataFechamento)
+    const itens = venda.itens || []
+    const valores = itens.map(item => Number(item.precoVenda ?? item.preco ?? 0))
+    const totalItens = valores.reduce((soma, valor) => soma + valor, 0)
+    const totalPago = Number(venda.total ?? venda.totalVenda ?? totalItens)
+    const pagamentoTexto = venda.formaPagamento || ({ dinheiro: 'Dinheiro', pix: 'Pix', cartao: 'Cartão' }[venda.pagamento] || 'Não informado')
+    const nomeCliente = prompt('Nome do cliente para o comprovante (opcional):', venda.cliente || '')
+    if (nomeCliente === null) return
+    const linhas = itens.map((item, i) => {
+      const qtd = Number(item.quantidade || 1)
+      const descricao = item.nome || 'Produto'
+      const detalhes = item.tipo === 'executivo' || item.tipo === 'combo'
+        ? `\n  Espetos: ${(item.espetosInclusos || []).join(', ')}`
+        : item.tipo === 'lanche' && item.espetoEscolhido ? `\n  Espeto: ${item.espetoEscolhido}` : ''
+      return `${qtd}x ${descricao}\n   R$ ${formatarMoedaBR(valores[i])}${detalhes}`
+    }).join('\n')
+    const texto = `MESTRE DO ESPETO
+COMPROVANTE DE CONSUMO
+DOCUMENTO NAO FISCAL
+
+CNPJ: ${cnpjFormatado}
+Data: ${data}
+Comanda: ${venda.cliente || 'Não informada'}
+${nomeCliente.trim() ? `Cliente: ${nomeCliente.trim()}\n` : ''}Pagamento: ${pagamentoTexto}
+------------------------
+${linhas || 'Sem itens registrados'}
+------------------------
+TOTAL PAGO: R$ ${formatarMoedaBR(totalPago)}
+
+Comprovante de consumo.
+Nao substitui nota fiscal.
+Obrigado pela preferencia!`
+    imprimirTexto(texto)
+  }
+
   const abrirFechamentoCaixa = () => {
     if (!comandaAtual) return
     if (!comandaAtual.itens || comandaAtual.itens.length === 0) {
@@ -2469,6 +2556,35 @@ Itens sem custo cadastrado entram com custo R$ 0,00.
 
 
  const imprimirRelatorioData = () => {
+  const comandasClientesTexto = rel.comandas
+    .filter(c => (c.tipoComanda || 'Cliente') === 'Cliente')
+    .map((c, index) => {
+      const totalComanda = Number(c.total ?? c.totalVenda ?? 0)
+      const itens = (c.itens || [])
+        .map((item, itemIndex) =>
+          `    ${itemIndex + 1}. ${item.nome} — R$ ${Number(item.precoVenda ?? item.preco ?? 0).toFixed(2)}`
+        )
+        .join('\n')
+
+      const dataHora = c.fechadaEmISO || c.dataFechamentoISO || c.fechadoEmISO || ''
+      let horaFormatada = 'Não informado'
+
+      if (dataHora) {
+        const d = new Date(dataHora)
+        if (!Number.isNaN(d.getTime())) {
+          horaFormatada = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        }
+      }
+
+      return `${index + 1}. ${c.cliente || 'Sem nome/mesa'}
+  Atendente: ${c.atendente || 'Não informado'}
+  Horário: ${horaFormatada}
+  Pagamento: ${(c.pagamento || c.formaPagamento || 'Não informado').toString().toUpperCase()}
+  Total da comanda: R$ ${totalComanda.toFixed(2)}
+${itens || '    - Sem itens registrados'}`
+    })
+    .join('\n\n')
+
   const consumoInternoTexto = Object.keys(rel.consumoInterno || {}).length
     ? Object.keys(rel.consumoInterno).map(tipo => {
         const grupo = rel.consumoInterno[tipo]
@@ -2494,6 +2610,13 @@ MESTRE DO ESPETO
 
 Comandas fechadas: ${rel.comandas.length}
 Itens vendidos: ${rel.totalItens}
+
+------------------------
+COMANDAS DE CLIENTES CONSIDERADAS NO FATURAMENTO
+
+${comandasClientesTexto || 'Nenhuma comanda de cliente registrada nesta data.'}
+
+TOTAL DAS COMANDAS DE CLIENTES: R$ ${rel.totalVendas.toFixed(2)}
 
 ------------------------
 RESUMO POR CATEGORIA
@@ -2697,7 +2820,7 @@ MESTRE DO ESPETO PDV
 
     const novoItem = {
       nome: nome.trim(),
-      categoria: categoria.trim(),
+      categoria: normalizarCategoriaCardapio(categoria),
       precoVenda,
       precoCusto,
       preco: precoVenda,
@@ -2737,7 +2860,7 @@ MESTRE DO ESPETO PDV
 
     const dadosAtualizados = {
       nome: novoNome.trim(),
-      categoria: novaCategoria.trim(),
+      categoria: normalizarCategoriaCardapio(novaCategoria),
       precoVenda,
       precoCusto,
       preco: precoVenda,
@@ -2770,6 +2893,45 @@ MESTRE DO ESPETO PDV
 
     await deleteDoc(doc(db, 'cardapio', item.id))
     alert('Item excluído do cardápio.')
+  }
+
+
+  // Remove do estoque somente produtos que já não existem no cadastro do cardápio.
+  const nomesEstoqueCardapio = new Set(
+    itensCardapio
+      .filter(item => item.controlaEstoque !== false)
+      .map(item => item.estoqueNome || item.nome)
+      .filter(Boolean)
+  )
+
+  const itensOrfaosEstoque = Object.keys(estoque || {})
+    .filter(nome => !nomesEstoqueCardapio.has(nome))
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+
+  const excluirItemEstoque = async (nome) => {
+    // Proteção extra: se o produto voltou a existir no cardápio, não deixa apagar.
+    const aindaExiste = itensCardapio.some(item =>
+      item.controlaEstoque !== false && (item.estoqueNome || item.nome) === nome
+    )
+
+    if (aindaExiste) {
+      return alert(`${nome} ainda está cadastrado no cardápio. Exclua ou ajuste o produto no cardápio antes de removê-lo do estoque.`)
+    }
+
+    const confirmar = confirm(
+      `EXCLUIR DO ESTOQUE?\n\n${nome}\n\nQuantidade atual: ${Number(estoque[nome] || 0)}\n\nO registro será removido do estoque. O histórico de vendas não será apagado.`
+    )
+    if (!confirmar) return
+
+    try {
+      const novoEstoque = { ...estoque }
+      delete novoEstoque[nome]
+      await salvarEstoque(novoEstoque)
+      alert(`${nome} foi excluído do estoque.`)
+    } catch (error) {
+      console.error('Erro ao excluir item do estoque:', error)
+      alert('Não foi possível excluir o item do estoque. Tente novamente.')
+    }
   }
 
   const selecionarComanda = (comanda) => {
@@ -4081,19 +4243,145 @@ MESTRE DO ESPETO PDV
 {adminLiberado && (
 <div style={styles.card}>
   <h2>Relatório por Data</h2>
-  <input 
-     type="date" 
-     value={dataRelatorio} 
-     onChange={e => setDataRelatorio(e.target.value)} 
-     style={styles.input}
-/>
-        
-        <button onClick={registrarEstoqueInicialDia} style={styles.yellow}>
-📌 Registrar Estoque Inicial do Dia
-</button>
-        <button onClick={imprimirRelatorioData} style={styles.green}>🧾 Imprimir Fechamento Detalhado</button>
-        <button onClick={limparDiaSelecionado} style={styles.red}>🧹 Limpar Testes do Dia</button>
+
+  <input
+    type="date"
+    value={dataRelatorio}
+    onChange={e => {
+      setDataRelatorio(e.target.value)
+      setMostrarRelatorioDetalhado(false)
+    }}
+    style={styles.input}
+  />
+
+  <button onClick={registrarEstoqueInicialDia} style={styles.yellow}>
+    📌 Registrar Estoque Inicial do Dia
+  </button>
+
+  <button
+    onClick={() => setMostrarRelatorioDetalhado(!mostrarRelatorioDetalhado)}
+    style={styles.green}
+  >
+    📋 {mostrarRelatorioDetalhado ? 'Ocultar Fechamento Detalhado' : 'Abrir Fechamento Detalhado'}
+  </button>
+
+  <button onClick={imprimirRelatorioData} style={styles.green}>
+    🧾 Imprimir Fechamento Detalhado
+  </button>
+
+  <button onClick={limparDiaSelecionado} style={styles.red}>
+    🧹 Limpar Testes do Dia
+  </button>
+
+  {mostrarRelatorioDetalhado && (
+    <div style={{ marginTop: 16 }}>
+      <div style={styles.box}>
+        <h3 style={{ marginTop: 0 }}>💰 Valor considerado no fechamento</h3>
+        Dinheiro: R$ {formatarMoedaBR(rel.caixaData.dinheiro)}<br />
+        Pix: R$ {formatarMoedaBR(rel.caixaData.pix)}<br />
+        Cartão: R$ {formatarMoedaBR(rel.caixaData.cartao)}<br />
+        <strong>Faturamento clientes: R$ {formatarMoedaBR(rel.totalVendas)}</strong>
       </div>
+
+      <h3>🧾 Comandas que formam esse faturamento</h3>
+
+      {rel.comandas.filter(c => (c.tipoComanda || 'Cliente') === 'Cliente').length === 0 ? (
+        <div style={styles.box}>
+          Nenhuma comanda de cliente encontrada nesta data.
+        </div>
+      ) : (
+        rel.comandas
+          .filter(c => (c.tipoComanda || 'Cliente') === 'Cliente')
+          .map((c, index) => {
+            const totalComanda = Number(c.total ?? c.totalVenda ?? 0)
+            const dataHora = c.fechadaEmISO || c.dataFechamentoISO || c.fechadoEmISO || ''
+            let horaFormatada = 'Não informado'
+
+            if (dataHora) {
+              const dataObj = new Date(dataHora)
+              if (!Number.isNaN(dataObj.getTime())) {
+                horaFormatada = dataObj.toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })
+              }
+            }
+
+            return (
+              <div key={c.id || `${c.cliente}-${index}`} style={styles.box}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  flexWrap: 'wrap'
+                }}>
+                  <strong>{index + 1}. {c.cliente || 'Sem nome/mesa'}</strong>
+                  <strong>R$ {formatarMoedaBR(totalComanda)}</strong>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => emitirComprovanteDescritivo(c)}
+                  style={{ ...styles.green, width: '100%', marginTop: 10 }}
+                >
+                  🧾 Emitir Comprovante Descritivo
+                </button>
+
+                <div style={{ marginTop: 6 }}>
+                  Atendente: {c.atendente || 'Não informado'}<br />
+                  Horário fechamento: {horaFormatada}<br />
+                  Pagamento: {(c.pagamento || c.formaPagamento || 'Não informado').toString().toUpperCase()}
+                </div>
+
+                {(c.itens || []).length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <strong>Itens da comanda:</strong>
+
+                    {(c.itens || []).map((item, itemIndex) => (
+                      <div
+                        key={item.cozinhaItemId || `${item.nome}-${itemIndex}`}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          gap: 10,
+                          borderTop: '1px solid rgba(255,255,255,0.10)',
+                          paddingTop: 6,
+                          marginTop: 6
+                        }}
+                      >
+                        <span>{itemIndex + 1}. {item.nome}</span>
+                        <span>R$ {formatarMoedaBR(Number(item.precoVenda ?? item.preco ?? 0))}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })
+      )}
+
+      <div style={{ ...styles.box, border: '2px solid #2e7d32' }}>
+        <strong>✅ Soma considerada no faturamento: R$ {formatarMoedaBR(rel.totalVendas)}</strong>
+      </div>
+
+      {rel.comandas.some(c => (c.tipoComanda || 'Cliente') !== 'Cliente') && (
+        <>
+          <h3>👥 Consumo interno — separado do faturamento</h3>
+
+          {rel.comandas
+            .filter(c => (c.tipoComanda || 'Cliente') !== 'Cliente')
+            .map((c, index) => (
+              <div key={c.id || `interno-${index}`} style={styles.box}>
+                <strong>{c.cliente || 'Sem nome'} — {c.tipoComanda || 'Interno'}</strong><br />
+                Custo: R$ {formatarMoedaBR(Number(c.totalCusto || 0))}<br />
+                A repassar: R$ {formatarMoedaBR(Number(c.totalRepasse || 0))}
+              </div>
+            ))}
+        </>
+      )}
+    </div>
+  )}
+</div>
 )}
 
 {adminLiberado && (
@@ -4121,13 +4409,51 @@ MESTRE DO ESPETO PDV
     </button>
 
     {mostrarEstoque && (
-      <EstoqueProfissional
-        estoque={estoque}
-        itensCardapio={itensCardapio}
-        conferenciaEstoque={rel.conferenciaEstoque}
-        reporEstoque={reporEstoque}
-        definirEstoque={definirEstoque}
-      />
+      <>
+        <div style={{ ...styles.box, marginTop: 14, marginBottom: 14, border: itensOrfaosEstoque.length ? '2px solid #ff9800' : '1px solid #2e7d32' }}>
+          <h3>🧹 Produtos antigos no estoque</h3>
+
+          {itensOrfaosEstoque.length === 0 ? (
+            <p>✅ Não existem produtos órfãos no estoque.</p>
+          ) : (
+            <>
+              <p>
+                Encontramos <strong>{itensOrfaosEstoque.length}</strong> produto(s) que continuam no estoque,
+                mas não existem mais no cardápio atual.
+              </p>
+
+              {itensOrfaosEstoque.map(nome => (
+                <div key={nome} style={{
+                  ...styles.itemLinha,
+                  borderTop: '1px solid rgba(255,255,255,0.12)',
+                  paddingTop: 8,
+                  marginTop: 8
+                }}>
+                  <span>
+                    <strong>{nome}</strong><br />
+                    <small>Quantidade atual: {Number(estoque[nome] || 0)}</small>
+                  </span>
+
+                  <button
+                    onClick={() => excluirItemEstoque(nome)}
+                    style={{ ...styles.red, width: 'auto', minHeight: 40 }}
+                  >
+                    🗑️ Excluir do Estoque
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+
+        <EstoqueProfissional
+          estoque={estoque}
+          itensCardapio={itensCardapio}
+          conferenciaEstoque={rel.conferenciaEstoque}
+          reporEstoque={reporEstoque}
+          definirEstoque={definirEstoque}
+        />
+      </>
     )}
   </div>
 )}
