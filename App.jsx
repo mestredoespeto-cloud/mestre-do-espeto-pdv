@@ -1937,11 +1937,11 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
               word-break: normal;
             }
 
-            #logo-cupom { width: 44mm; text-align: center; margin: 0 auto 1mm; }
-            #logo-cupom img { display: block; width: 30mm; max-height: 31mm; object-fit: contain; margin: 0 auto; }
-            #cupom.compacto { width: 46mm; padding: 0 1mm; font-size: 10px; line-height: 1.18; font-weight: 500; overflow-wrap: anywhere; }
+            #logo-cupom { width: 46mm; text-align: center; margin: 0 auto 0.5mm; padding: 0; }
+            #logo-cupom img { display: block; width: 22mm; max-height: 23mm; object-fit: contain; margin: 0 auto; }
+            #cupom.compacto { width: 46mm; padding: 0 1mm; font-size: 12px; line-height: 1.2; font-weight: 700; overflow-wrap: anywhere; }
             @media print {
-              #cupom.compacto { width: 46mm !important; padding: 0 1mm !important; font-size: 10px !important; line-height: 1.18 !important; font-weight: 500 !important; }
+              #cupom.compacto { width: 46mm !important; padding: 0 1mm !important; font-size: 12px !important; line-height: 1.2 !important; font-weight: 700 !important; }
             }
             #acoes {
               width: 58mm;
@@ -1973,6 +1973,13 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
                 padding: 1mm 1.5mm 0 !important;
                 font-size: 20px !important;
                 line-height: 1.16 !important;
+              }
+
+              #cupom.compacto {
+                width: 46mm !important;
+                font-size: 12px !important;
+                font-weight: 700 !important;
+                line-height: 1.2 !important;
               }
 
               #acoes {
