@@ -1727,10 +1727,10 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
       return `<div class="item"><div class="item-titulo">${primeira}</div>${resto}</div>`
     }).join('<div class="separador"></div>')
 
-    const estiloCompacto = compacto ? `
+    const estiloCompacto = `
       #cupom { width: 48mm !important; padding: 1mm 1mm 0 !important; font-size: 12px !important; line-height: 1.15 !important; font-weight: 500 !important; overflow-wrap: anywhere !important; }
       @media print { #cupom { width: 48mm !important; padding: 1mm 1mm 0 !important; font-size: 12px !important; line-height: 1.15 !important; font-weight: 500 !important; overflow-wrap: anywhere !important; } }
-    ` : ''
+    `
 
     win.document.open()
     win.document.write(`
@@ -1877,7 +1877,7 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
   // O envio para cozinha continua criando statusImpressao='aguardando';
   // o Agente Windows é o único responsável por consumir essa fila.
 
-  const imprimirTexto = (texto, compacto = false) => {
+  const imprimirTexto = (texto, compacto = false, comLogo = false) => {
     tocarSom('/impressao.mp3')
 
     const win = window.open('', '', 'width=360,height=520')
@@ -1892,6 +1892,7 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
 
+    const cabecalhoLogo = comLogo ? '<div id="logo-cupom"><img src="/logo-cupom-pos58.png" alt="Mestre do Espeto" /></div>' : ''
     win.document.open()
     win.document.write(`
       <!doctype html>
@@ -1936,6 +1937,12 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
               word-break: normal;
             }
 
+            #logo-cupom { width: 44mm; text-align: center; margin: 0 auto 1mm; }
+            #logo-cupom img { display: block; width: 30mm; max-height: 31mm; object-fit: contain; margin: 0 auto; }
+            #cupom.compacto { width: 46mm; padding: 0 1mm; font-size: 10px; line-height: 1.18; font-weight: 500; overflow-wrap: anywhere; }
+            @media print {
+              #cupom.compacto { width: 46mm !important; padding: 0 1mm !important; font-size: 10px !important; line-height: 1.18 !important; font-weight: 500 !important; }
+            }
             #acoes {
               width: 58mm;
               padding: 8px 6px 0;
@@ -1975,7 +1982,8 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
           </style>
         </head>
         <body>
-          <div id="cupom">${textoSeguro}</div>
+          ${cabecalhoLogo}
+          <div id="cupom" class="${compacto ? 'compacto' : ''}">${textoSeguro}</div>
           <div id="acoes">
             <button type="button" onclick="window.print()">🖨️ IMPRIMIR</button>
           </div>
@@ -2086,8 +2094,7 @@ Obrigado e volte sempre!
         : item.tipo === 'lanche' && item.espetoEscolhido ? `\n  Espeto: ${item.espetoEscolhido}` : ''
       return `${qtd}x ${descricao}\n   R$ ${formatarMoedaBR(valores[i])}${detalhes}`
     }).join('\n')
-    const texto = `MESTRE DO ESPETO
-COMPROVANTE DE CONSUMO
+    const texto = `COMPROVANTE DE CONSUMO
 DOCUMENTO NAO FISCAL
 
 CNPJ: ${cnpjFormatado}
@@ -2102,7 +2109,7 @@ TOTAL PAGO: R$ ${formatarMoedaBR(totalPago)}
 Comprovante de consumo.
 Nao substitui nota fiscal.
 Obrigado pela preferencia!`
-    imprimirTexto(texto, true)
+    imprimirTexto(texto, true, true)
   }
 
   const abrirFechamentoCaixa = () => {
