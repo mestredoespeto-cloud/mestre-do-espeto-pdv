@@ -1727,6 +1727,11 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
       return `<div class="item"><div class="item-titulo">${primeira}</div>${resto}</div>`
     }).join('<div class="separador"></div>')
 
+    const estiloCompacto = compacto ? `
+      #cupom { width: 48mm !important; padding: 1mm 1mm 0 !important; font-size: 12px !important; line-height: 1.15 !important; font-weight: 500 !important; overflow-wrap: anywhere !important; }
+      @media print { #cupom { width: 48mm !important; padding: 1mm 1mm 0 !important; font-size: 12px !important; line-height: 1.15 !important; font-weight: 500 !important; overflow-wrap: anywhere !important; } }
+    ` : ''
+
     win.document.open()
     win.document.write(`
       <!doctype html>
@@ -1827,6 +1832,7 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
               padding-top: 1px;
               height: 1mm;
             }
+            ${estiloCompacto}
           </style>
         </head>
         <body>
@@ -1871,7 +1877,7 @@ ESP: ${item.espetoEscolhido || '-'}${item.observacao ? `\nOBS: ${item.observacao
   // O envio para cozinha continua criando statusImpressao='aguardando';
   // o Agente Windows é o único responsável por consumir essa fila.
 
-  const imprimirTexto = (texto) => {
+  const imprimirTexto = (texto, compacto = false) => {
     tocarSom('/impressao.mp3')
 
     const win = window.open('', '', 'width=360,height=520')
@@ -2096,7 +2102,7 @@ TOTAL PAGO: R$ ${formatarMoedaBR(totalPago)}
 Comprovante de consumo.
 Nao substitui nota fiscal.
 Obrigado pela preferencia!`
-    imprimirTexto(texto)
+    imprimirTexto(texto, true)
   }
 
   const abrirFechamentoCaixa = () => {
